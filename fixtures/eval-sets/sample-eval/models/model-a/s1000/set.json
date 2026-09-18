@@ -1,0 +1,23 @@
+[
+  {
+    "prompt_id": 1,
+    "prompt": "A red square on a white background",
+    "prompt_output": "Render a centered crimson square.",
+    "seed": 42,
+    "category": "shape",
+    "scores": { "alignment": 0.91, "aesthetic": 0.72 },
+    "flags": [true, false, null]
+  },
+  {
+    "prompt_id": 2,
+    "prompt": "海边的一座灯塔",
+    "prompt_output": "A lighthouse beside a calm sea at dusk.",
+    "seed": 7
+  },
+  {
+    "prompt_id": 4,
+    "prompt": "",
+    "prompt_output": "An intentionally empty source prompt.",
+    "notes": null
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "prompt_id": 1,
+    "prompt": "A scarlet geometric tile",
+    "prompt_output": "A small red tile with generous negative space.",
+    "seed": 99,
+    "metadata": { "sampler": "fixture", "weights": [0.2, 0.8] }
+  },
+  {
+    "prompt_id": 3,
+    "prompt": "A glass greenhouse in winter",
+    "prompt_output": "Snow around an illuminated greenhouse.",
+    "approved": false
+  },
+  {
+    "prompt_id": 4,
+    "prompt": "Model-owned wording for row four",
+    "prompt_output": "This image is intentionally missing."
+  }
+]
