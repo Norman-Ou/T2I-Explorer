@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "record_schema_version": 1,
+  "id": "sample-eval",
+  "title": "Sample evaluation",
+  "description": "A small committed fixture for development and acceptance tests.",
+  "models": [
+    {
+      "id": "model-a",
+      "label": "Model A",
+      "description": "Uses one prompt formulation.",
+      "steps": [1000]
+    },
+    {
+      "id": "model-b",
+      "label": "Model B",
+      "description": "Uses different prompts and has a different ID set.",
+      "steps": [2000]
+    }
+  ]
+}

@@ -9,6 +9,9 @@ build/
 .next/
 .cache/
 coverage/
+playwright-report/
+test-results/
+dist-server/
 
 # Local configuration and editor state.
 .env
