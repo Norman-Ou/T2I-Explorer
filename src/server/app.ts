@@ -46,9 +46,14 @@ export async function buildApp(options: { dataRoot: string; serveClient?: boolea
         objectSrc: ["'none'"],
         baseUri: ["'none'"],
         frameAncestors: ["'none'"],
-        formAction: ["'none'"]
+        formAction: ["'none'"],
+        // The default deployment is plain HTTP on loopback. Safari/WebKit
+        // otherwise upgrades same-origin assets to HTTPS and leaves the app
+        // shell blank.
+        upgradeInsecureRequests: null
       }
     },
+    strictTransportSecurity: false,
     referrerPolicy: { policy: "no-referrer" }
   });
   await app.register(rateLimit, { global: false });

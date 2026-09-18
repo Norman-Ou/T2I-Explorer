@@ -476,7 +476,7 @@ Dataset JSON and images are untrusted input even when loaded from local disk. Th
 - Serve images through the tuple API, not a general static mount of `data/`.
 - Determine media type from the allowlisted extension and verify file signatures for WebP, PNG, and JPEG before serving.
 - Set `X-Content-Type-Options: nosniff`, a restrictive Content Security Policy, `Referrer-Policy: no-referrer`, and deny framing unless deployment requirements explicitly allow it.
-- Recommended CSP: `default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`. Avoid inline script/style exceptions.
+- Recommended CSP: `default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`. Avoid inline script/style exceptions. The local HTTP deployment MUST omit `upgrade-insecure-requests` and HSTS because Safari/WebKit otherwise upgrades loopback assets to unavailable HTTPS URLs; a future HTTPS network deployment SHOULD enable them at its trusted TLS terminator.
 - Render all JSON and diagnostics through text nodes; do not use raw HTML injection.
 - Restrict API CORS to same-origin by default. Do not use wildcard origins.
 - Apply request-body and rate limits to reload; it has no body and should be disabled or proxy-authorized on shared deployments.

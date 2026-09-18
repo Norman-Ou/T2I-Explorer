@@ -33,6 +33,15 @@ async function miniRoot(records: unknown[], schemaVersion = 1) {
 }
 
 describe("read-only API", () => {
+  it("keeps loopback HTTP assets usable while applying security headers", async () => {
+    const instance = await app();
+    const response = await instance.inject({ method: "GET", url: "/api/v1/health", headers: { host: "127.0.0.1" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-security-policy"]).not.toContain("upgrade-insecure-requests");
+    expect(response.headers["strict-transport-security"]).toBeUndefined();
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
   it("discovers valid manifests and returns model-owned records and image diagnostics", async () => {
     const instance = await app();
     const catalogResponse = await instance.inject({ method: "GET", url: "/api/v1/catalog", headers: { host: "127.0.0.1" } });
