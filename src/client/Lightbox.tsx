@@ -15,6 +15,10 @@ export function Lightbox({ selection, onClose, onPrevious, onNext }: { selection
       <aside className="details-panel" aria-label="Record details"><div className="record-identity"><strong>{modelLabel}</strong><span>{stepLabel}</span><span>Source ID {record.source_sample_id}</span><span>{record.review_stage}</span></div>
         <h3>Input text</h3><p className="exact-text">{record.message_input_text === null ? "Unavailable" : record.message_input_text}</p>
         <h3>Output text</h3><p className="exact-text">{record.message_output_text === null ? "Unavailable" : record.message_output_text === "" ? "(exact empty string)" : record.message_output_text}</p>
+        {record.review_stage === "paper_example" ? <>
+          <h3>Paper input text</h3><p className="exact-text">{record.paper_input_text ?? "Unavailable"}</p>
+          <h3>Paper output text</h3><p className="exact-text">{record.paper_output_text ?? "Unavailable"}</p>
+        </> : null}
         <p>Panels: {record.panel_roles.join(" | ")}</p><JsonInspector record={record} /></aside></div>
   </dialog>;
 }

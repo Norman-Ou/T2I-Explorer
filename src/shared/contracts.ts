@@ -1,6 +1,6 @@
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-export const reviewStages = ["accepted_e6_sft_row", "official_training_execution", "official_method_extension", "source_annotation_audit"] as const;
+export const reviewStages = ["accepted_e6_sft_row", "official_training_execution", "official_preview_loader_execution", "official_method_extension", "paper_example", "source_annotation_audit"] as const;
 export type ReviewStage = (typeof reviewStages)[number];
 export type PairStatus = "complete" | "partial" | "blocked";
 export type StepV2 = {
@@ -21,13 +21,15 @@ export type RecordV2 = {
   message_input_text: string | null;
   message_output_text: string | null;
   source_annotation_text: string | null;
+  paper_input_text?: string | null;
+  paper_output_text?: string | null;
   source_dataset: string;
   source_split: string;
   source_manifest_path: string | null;
   panel_roles: [string, string, string];
   asset_paths: { [key: string]: string[] };
   evidence: { [key: string]: JsonValue };
-  [key: string]: JsonValue;
+  [key: string]: JsonValue | undefined;
 };
 export const diagnosticCodes = ["MANIFEST_INVALID", "UNSUPPORTED_SCHEMA_VERSION", "SET_JSON_INVALID", "RECORD_INVALID", "DUPLICATE_SAMPLE_INDEX", "COUNT_MISMATCH", "IMAGE_MISSING", "IMAGE_AMBIGUOUS", "IMAGE_DECODE_FAILED", "STALE_SNAPSHOT", "RESOURCE_LIMIT_EXCEEDED"] as const;
 export type DiagnosticCode = (typeof diagnosticCodes)[number];
@@ -65,6 +67,7 @@ export const recordSchema = {
     source_sample_id: { type: "string", minLength: 1, maxLength: 1000 }, review_stage: stage,
     message_input_text: { type: ["string", "null"] }, message_output_text: { type: ["string", "null"] },
     source_annotation_text: { type: ["string", "null"] }, source_dataset: { type: "string", minLength: 1 },
+    paper_input_text: { type: ["string", "null"] }, paper_output_text: { type: ["string", "null"] },
     source_split: { type: "string", minLength: 1 }, source_manifest_path: { type: ["string", "null"] },
     panel_roles: { type: "array", minItems: 3, maxItems: 3, items: { type: "string", minLength: 1, maxLength: 120 } },
     asset_paths: { type: "object", additionalProperties: { type: "array", items: { type: "string" } } },

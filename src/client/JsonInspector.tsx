@@ -41,6 +41,6 @@ function Node({ name, value, depth }: { name: string; value: JsonValue; depth: n
   );
 }
 
-export function JsonInspector({ record }: { record: Record<string, JsonValue> }) {
-  return <div className="json-inspector">{Object.entries(record).map(([key, value]) => <Node key={key} name={key} value={value} depth={0} />)}</div>;
+export function JsonInspector({ record }: { record: Record<string, JsonValue | undefined> }) {
+  return <div className="json-inspector">{Object.entries(record).filter((entry): entry is [string, JsonValue] => entry[1] !== undefined).map(([key, value]) => <Node key={key} name={key} value={value} depth={0} />)}</div>;
 }

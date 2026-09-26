@@ -14,6 +14,10 @@ Gallery presents the available pairs; Models chooses task then step, and Steps c
 task. All modes retain selected columns. Each cell shows its actual source ID, review stage,
 labeled Original | Auxiliary | Output composite, exact Message input/output, and separate source
 annotation when available. `null` means unavailable; the empty string is displayed distinctly.
+A BaseModel `preview` step explicitly means the released preview media was passed through the
+official loader; it does not prove equality to the training archive's source and target bytes.
+`paper` shows inference figures with separate paper prompt/output text and no training membership.
+Neither stage contributes to the `official` step's count.
 A text-only target may have a review visualization labeled `output_aux`. Ordinal alignment does
 not assert that sources are shared between columns.
 

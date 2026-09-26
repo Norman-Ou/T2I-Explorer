@@ -47,14 +47,17 @@ Supported image formats are PNG, WebP, JPEG. IDs match
 
 A complete pair has 30 records. An incomplete pair needs its actual count and shortfall reason;
 a blocked pair has zero records and an empty `set.json` array. The allowed review stages are
-`accepted_e6_sft_row`, `official_training_execution`, `official_method_extension`, and
-`source_annotation_audit`. An extension is separate from official training evidence. The server
+`accepted_e6_sft_row`, `official_training_execution`, `official_preview_loader_execution`,
+`official_method_extension`, `paper_example`, and `source_annotation_audit`. A published-preview
+loader execution or paper example is separate from verified original-source training evidence. The server
 checks declared counts against `set.json` and rejects invalid or duplicate sample indices.
 
 Each record has `sample_index` (contiguous 1..N), `source_sample_id`, `review_stage`, exact
 `message_input_text` and `message_output_text`, `source_annotation_text`, `source_dataset`,
 `source_split`, `source_manifest_path`, three `panel_roles`, `asset_paths`, and `evidence`.
 Text fields accept `null` for unavailable; `""` is an exact empty string. The composite
+Paper examples can carry `paper_input_text` and `paper_output_text` separately from constructed
+Message text. They have no train-split or training-target claim. The composite
 `sample-{sample_index}` is a review image, not a training input. Provenance asset paths are
 metadata only: the server never serves arbitrary paths from a record.
 
@@ -77,3 +80,5 @@ pnpm audit --prod --audit-level high
 The server rejects symlinks/path escape, validates image signatures and dimensions, bounds JSON
 and image sizes, renders data as text, and binds to loopback by default. Network binding requires
 `T2I_ALLOW_NETWORK=true`, an allowed host list, and an authenticated TLS reverse proxy.
+Each v2 record remains bounded to 1 MiB, 25,000 JSON nodes, and depth 100; this permits
+the portable BaseModel archive's exact per-example evidence to stay in the detail JSON.

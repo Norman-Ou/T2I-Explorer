@@ -82,7 +82,9 @@
                   "enum": [
                     "accepted_e6_sft_row",
                     "official_training_execution",
+                    "official_preview_loader_execution",
                     "official_method_extension",
+                    "paper_example",
                     "source_annotation_audit"
                   ]
                 },

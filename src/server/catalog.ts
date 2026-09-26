@@ -23,7 +23,9 @@ const limits = {
   records: 100_000,
   imageBytes: 50 * 1024 * 1024,
   recordBytes: 1024 * 1024,
-  recordNodes: 10_000,
+  // Portable BaseModel executions include the exact loader plan, tensors and
+  // source annotation. The largest measured record has 18,578 JSON nodes.
+  recordNodes: 25_000,
   depth: 100
 };
 

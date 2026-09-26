@@ -31,7 +31,9 @@
       "enum": [
         "accepted_e6_sft_row",
         "official_training_execution",
+        "official_preview_loader_execution",
         "official_method_extension",
+        "paper_example",
         "source_annotation_audit"
       ]
     },
@@ -48,6 +50,18 @@
       ]
     },
     "source_annotation_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paper_input_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paper_output_text": {
       "type": [
         "string",
         "null"

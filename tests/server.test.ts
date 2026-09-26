@@ -8,9 +8,9 @@ import type { CatalogResponse, DatasetResponse } from "../src/shared/contracts.j
 const fixtureRoot = path.resolve("fixtures/datasets"); const apps: FastifyInstance[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
 async function app(root = fixtureRoot) { const instance = await buildApp({ dataRoot: root, serveClient: false }); apps.push(instance); return instance; }
-async function miniRoot(records: unknown[], count = records.length) {
+async function miniRoot(records: unknown[], count = records.length, stage = "accepted_e6_sft_row") {
   const root = await mkdtemp(path.join(os.tmpdir(),"t2i-v2-")); const step = path.join(root,"mini/model/source"); await mkdir(step,{recursive:true});
-  await writeFile(path.join(root,"mini/manifest.json"),JSON.stringify({ schema_version:2,record_schema_version:2,id:"mini",title:"Mini",models:[{id:"model",label:"Model",steps:[{id:"source",label:"Source",review_stage:"accepted_e6_sft_row",status:"partial",record_count:count,target_count:30,shortfall_reason:"Fixture"}]}] }));
+  await writeFile(path.join(root,"mini/manifest.json"),JSON.stringify({ schema_version:2,record_schema_version:2,id:"mini",title:"Mini",models:[{id:"model",label:"Model",steps:[{id:"source",label:"Source",review_stage:stage,status:"partial",record_count:count,target_count:30,shortfall_reason:"Fixture"}]}] }));
   await writeFile(path.join(step,"set.json"),JSON.stringify(records)); return root;
 }
 const host = { host: "127.0.0.1" };
@@ -37,6 +37,15 @@ describe("v2 API", () => {
   it("shows blocked steps as empty without synthetic records", async () => {
     const instance = await app(); const response = await instance.inject({url:"/api/v2/datasets/basemodel-task-r30/refseg/official",headers:host});
     expect(response.statusCode).toBe(200); expect(response.json<DatasetResponse>().records).toEqual([]);
+  });
+  it("keeps paper text separate from unavailable training Message text", async () => {
+    const row = {sample_index:1,source_sample_id:"paper:fig9:fish",review_stage:"paper_example",message_input_text:null,message_output_text:null,paper_input_text:"<p>fish</p>",paper_output_text:null,source_annotation_text:null,source_dataset:"Dense200",source_split:"not established",source_manifest_path:null,panel_roles:["paper input","paper figure","paper output"],asset_paths:{},evidence:{}};
+    const instance = await app(await miniRoot([row],1,"paper_example"));
+    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
+    expect(response.statusCode).toBe(200);
+    const published = response.json<DatasetResponse>().records[0]!;
+    expect(published.message_input_text).toBeNull();
+    expect(published.paper_input_text).toBe("<p>fish</p>");
   });
   it("rejects count mismatch, path escape, and undeclared tuples", async () => {
     const instance = await app(await miniRoot([],1));

@@ -21,7 +21,7 @@ export function filterRows(rows: AlignedRow[], query: string, labels: string[] =
   const needle = query.trim().toLowerCase(); if (!needle) return rows;
   if (labels.some((label) => label.toLowerCase().includes(needle))) return rows;
   return rows.filter((row) => String(row.sampleIndex).includes(needle) || [...row.records.values()].some((record) =>
-    [record.source_sample_id, record.message_input_text, record.message_output_text, record.source_annotation_text, record.source_dataset].some((value) => value?.toLowerCase().includes(needle))));
+    [record.source_sample_id, record.message_input_text, record.message_output_text, record.paper_input_text, record.paper_output_text, record.source_annotation_text, record.source_dataset].some((value) => value?.toLowerCase().includes(needle))));
 }
 export function orderRows(rows: AlignedRow[], order: "id" | "shuffle", seed: number): AlignedRow[] {
   if (order === "id") return [...rows].sort((a,b) => a.sampleIndex-b.sampleIndex);
