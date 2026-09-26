@@ -1,144 +1,64 @@
-import { cp, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/server/app.js";
 import type { CatalogResponse, DatasetResponse } from "../src/shared/contracts.js";
-
-const fixtureRoot = path.resolve("fixtures/eval-sets");
-const apps: FastifyInstance[] = [];
-
+const fixtureRoot = path.resolve("fixtures/datasets"); const apps: FastifyInstance[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
-
-async function app(root = fixtureRoot) {
-  const instance = await buildApp({ dataRoot: root, serveClient: false });
-  apps.push(instance);
-  return instance;
+async function app(root = fixtureRoot) { const instance = await buildApp({ dataRoot: root, serveClient: false }); apps.push(instance); return instance; }
+async function miniRoot(records: unknown[], count = records.length) {
+  const root = await mkdtemp(path.join(os.tmpdir(),"t2i-v2-")); const step = path.join(root,"mini/model/source"); await mkdir(step,{recursive:true});
+  await writeFile(path.join(root,"mini/manifest.json"),JSON.stringify({ schema_version:2,record_schema_version:2,id:"mini",title:"Mini",models:[{id:"model",label:"Model",steps:[{id:"source",label:"Source",review_stage:"accepted_e6_sft_row",status:"partial",record_count:count,target_count:30,shortfall_reason:"Fixture"}]}] }));
+  await writeFile(path.join(step,"set.json"),JSON.stringify(records)); return root;
 }
-
-async function miniRoot(records: unknown[], schemaVersion = 1) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "t2i-explorer-mini-"));
-  const step = path.join(root, "mini/models/model/s1");
-  await mkdir(step, { recursive: true });
-  await writeFile(path.join(root, "mini/manifest.json"), JSON.stringify({
-    schema_version: schemaVersion,
-    record_schema_version: 1,
-    id: "mini",
-    title: "Mini",
-    models: [{ id: "model", label: "Model", steps: [1] }]
-  }));
-  await writeFile(path.join(step, "set.json"), JSON.stringify(records));
-  return root;
-}
-
-describe("read-only API", () => {
-  it("keeps loopback HTTP assets usable while applying security headers", async () => {
-    const instance = await app();
-    const response = await instance.inject({ method: "GET", url: "/api/v1/health", headers: { host: "127.0.0.1" } });
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-security-policy"]).not.toContain("upgrade-insecure-requests");
-    expect(response.headers["strict-transport-security"]).toBeUndefined();
-    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+const host = { host: "127.0.0.1" };
+describe("v2 API", () => {
+  it("discovers independent datasets, including an empty root", async () => {
+    const empty = await app(await mkdtemp(path.join(os.tmpdir(),"t2i-empty-")));
+    expect((await empty.inject({url:"/api/v2/catalog",headers:host})).json<CatalogResponse>().datasets).toEqual([]);
+    const instance = await app(); const response = await instance.inject({url:"/api/v2/catalog",headers:host});
+    expect(response.statusCode).toBe(200); expect(response.json<CatalogResponse>().datasets.map((x) => x.id)).toEqual(["basemodel-task-r30","sft-e6.0-r30"]);
+    expect((await instance.inject({url:"/api/v2/catalog",headers:{...host,"if-none-match":response.headers.etag!}})).statusCode).toBe(304);
+    const oneRoot = await mkdtemp(path.join(os.tmpdir(),"t2i-one-"));
+    await cp(path.join(fixtureRoot,"sft-e6.0-r30"),path.join(oneRoot,"sft-e6.0-r30"),{recursive:true});
+    const one = await app(oneRoot);
+    expect((await one.inject({url:"/api/v2/catalog",headers:host})).json<CatalogResponse>().datasets.map((x) => x.id)).toEqual(["sft-e6.0-r30"]);
   });
-
-  it("discovers valid manifests and returns model-owned records and image diagnostics", async () => {
-    const instance = await app();
-    const catalogResponse = await instance.inject({ method: "GET", url: "/api/v1/catalog", headers: { host: "127.0.0.1" } });
-    expect(catalogResponse.statusCode).toBe(200);
-    const catalog = catalogResponse.json<CatalogResponse>();
-    expect(catalog.eval_sets[0]?.id).toBe("sample-eval");
-    const notModified = await instance.inject({ method: "GET", url: "/api/v1/catalog", headers: { host: "127.0.0.1", "if-none-match": catalogResponse.headers.etag! } });
-    expect(notModified.statusCode).toBe(304);
-
-    const response = await instance.inject({ method: "GET", url: "/api/v1/eval-sets/sample-eval/models/model-b/steps/2000", headers: { host: "localhost" } });
-    expect(response.statusCode).toBe(200);
-    const data = response.json<DatasetResponse>();
-    expect(data.records.find((record) => record.prompt_id === 1)?.prompt).toBe("A scarlet geometric tile");
-    expect(data.images["1"]?.status).toBe("ambiguous");
-    expect(data.images["4"]?.status).toBe("missing");
-    expect(data.diagnostics.map((item) => item.code)).toEqual(expect.arrayContaining(["IMAGE_AMBIGUOUS", "IMAGE_MISSING"]));
+  it("returns exact text, named step and a rooted image", async () => {
+    const instance = await app(); const response = await instance.inject({url:"/api/v2/datasets/sft-e6.0-r30/refseg/sior-t",headers:host});
+    expect(response.statusCode).toBe(200); const body = response.json<DatasetResponse>();
+    expect(body.records[0]?.message_input_text).toContain("<SEG>"); expect(body.records[0]?.message_output_text).toBe("");
+    expect(body.images["1"]?.url).toContain("/api/v2/images/");
+    const image = await instance.inject({url:body.images["1"]!.url!,headers:host}); expect(image.statusCode).toBe(200); expect(image.headers["content-type"]).toContain("image/png");
+    expect(body.records[0]?.panel_roles).toEqual(["original","input_aux","output"]);
   });
-
-  it("serves only validated image tuples with nosniff and an allowlisted media type", async () => {
-    const instance = await app();
-    const response = await instance.inject({ method: "GET", url: "/api/v1/images/sample-eval/model-a/1000/2", headers: { host: "127.0.0.1" } });
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-type"]).toContain("image/png");
-    expect(response.headers["x-content-type-options"]).toBe("nosniff");
-    expect(response.rawPayload.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
-
-    const traversal = await instance.inject({ method: "GET", url: "/api/v1/images/..%2Fsecret/model-a/1000/2", headers: { host: "127.0.0.1" } });
-    expect(traversal.statusCode).toBeGreaterThanOrEqual(400);
+  it("shows blocked steps as empty without synthetic records", async () => {
+    const instance = await app(); const response = await instance.inject({url:"/api/v2/datasets/basemodel-task-r30/refseg/official",headers:host});
+    expect(response.statusCode).toBe(200); expect(response.json<DatasetResponse>().records).toEqual([]);
   });
-
-  it("retains the last valid dataset snapshot after a malformed reload", async () => {
-    const temporary = await mkdtemp(path.join(os.tmpdir(), "t2i-explorer-"));
-    await cp(fixtureRoot, temporary, { recursive: true });
-    const instance = await app(temporary);
-    const url = "/api/v1/eval-sets/sample-eval/models/model-a/steps/1000";
-    expect((await instance.inject({ method: "GET", url, headers: { host: "localhost" } })).statusCode).toBe(200);
-    const setFile = path.join(temporary, "sample-eval/models/model-a/s1000/set.json");
-    await writeFile(setFile, "{not json", "utf8");
-    expect((await instance.inject({ method: "POST", url: "/api/v1/reload", headers: { host: "localhost", origin: "http://localhost" } })).statusCode).toBe(200);
-    const stale = (await instance.inject({ method: "GET", url, headers: { host: "localhost" } })).json<DatasetResponse>();
-    expect(stale.records).toHaveLength(3);
-    expect(stale.diagnostics.some((item) => item.code === "STALE_SNAPSHOT")).toBe(true);
+  it("rejects count mismatch, path escape, and undeclared tuples", async () => {
+    const instance = await app(await miniRoot([],1));
+    expect((await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host})).json().error.code).toBe("COUNT_MISMATCH");
+    expect((await instance.inject({url:"/api/v2/datasets/mini/model/../source",headers:host})).statusCode).not.toBe(200);
+    expect((await instance.inject({url:"/api/v2/datasets/mini/model/other",headers:host})).statusCode).toBe(422);
   });
-
-  it("rejects symlinked dataset files", async () => {
-    const temporary = await mkdtemp(path.join(os.tmpdir(), "t2i-explorer-link-"));
-    await cp(fixtureRoot, temporary, { recursive: true });
-    const setFile = path.join(temporary, "sample-eval/models/model-a/s1000/set.json");
-    const source = await readFile(setFile);
-    const outside = path.join(temporary, "outside.json");
-    await writeFile(outside, source);
-    await import("node:fs/promises").then(({ unlink }) => unlink(setFile));
-    await symlink(outside, setFile);
-    const instance = await app(temporary);
-    const response = await instance.inject({ method: "GET", url: "/api/v1/eval-sets/sample-eval/models/model-a/steps/1000", headers: { host: "localhost" } });
-    expect(response.statusCode).toBe(422);
-    expect(response.json().error.message).toMatch(/symbolic links/i);
-  });
-
-  it("retains valid records while surfacing malformed records", async () => {
-    const root = await miniRoot([
-      { prompt_id: 1, prompt: "valid", prompt_output: "valid" },
-      { prompt_id: 2, prompt: 4, prompt_output: "invalid" }
-    ]);
+  it("rejects symlinked media and non-loopback host", async () => {
+    const root = await miniRoot([{sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","auxiliary","output"],asset_paths:{},evidence:{}}]);
+    await symlink("/etc/hosts",path.join(root,"mini/model/source/sample-1.png"));
     const instance = await app(root);
-    const response = await instance.inject({ method: "GET", url: "/api/v1/eval-sets/mini/models/model/steps/1", headers: { host: "localhost" } });
-    const data = response.json<DatasetResponse>();
-    expect(response.statusCode).toBe(200);
-    expect(data.records.map((record) => record.prompt_id)).toEqual([1]);
-    expect(data.diagnostics.some((item) => item.code === "RECORD_INVALID" && item.record_index === 1)).toBe(true);
+    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
+    expect(response.json<DatasetResponse>().images["1"]?.status).toBe("missing");
+    expect((await instance.inject({url:"/api/v2/catalog",headers:{host:"example.com"}})).statusCode).toBe(403);
   });
-
-  it("rejects duplicate IDs and reports unsupported manifest versions", async () => {
-    const duplicateRoot = await miniRoot([
-      { prompt_id: 1, prompt: "one", prompt_output: "one" },
-      { prompt_id: 1, prompt: "duplicate", prompt_output: "duplicate" }
-    ]);
-    const duplicateApp = await app(duplicateRoot);
-    const duplicate = await duplicateApp.inject({ method: "GET", url: "/api/v1/eval-sets/mini/models/model/steps/1", headers: { host: "localhost" } });
-    expect(duplicate.statusCode).toBe(422);
-    expect(duplicate.json().error.code).toBe("DUPLICATE_PROMPT_ID");
-    expect(duplicate.json().error.message).toMatch(/duplicate prompt IDs/i);
-
-    const unsupportedRoot = await miniRoot([], 2);
-    const unsupportedApp = await app(unsupportedRoot);
-    const catalog = (await unsupportedApp.inject({ method: "GET", url: "/api/v1/catalog", headers: { host: "localhost" } })).json<CatalogResponse>();
-    expect(catalog.eval_sets).toHaveLength(0);
-    expect(catalog.diagnostics.some((item) => item.code === "UNSUPPORTED_SCHEMA_VERSION")).toBe(true);
-  });
-
-  it("marks a supported extension with invalid bytes as an invalid image", async () => {
-    const root = await miniRoot([{ prompt_id: 1, prompt: "one", prompt_output: "one" }]);
-    await writeFile(path.join(root, "mini/models/model/s1/p1.webp"), "not a webp");
+  it("revalidates a cached image after its file is replaced", async () => {
+    const row = {sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","auxiliary","output"],asset_paths:{},evidence:{}};
+    const root = await miniRoot([row]); const imagePath = path.join(root,"mini/model/source/sample-1.png");
+    await copyFile(path.join(fixtureRoot,"sft-e6.0-r30/refseg/sior-t/sample-1.png"),imagePath);
     const instance = await app(root);
-    const response = await instance.inject({ method: "GET", url: "/api/v1/eval-sets/mini/models/model/steps/1", headers: { host: "localhost" } });
-    const data = response.json<DatasetResponse>();
-    expect(data.images["1"]?.status).toBe("invalid");
-    expect(data.diagnostics.some((item) => item.code === "IMAGE_DECODE_FAILED")).toBe(true);
+    expect((await instance.inject({url:"/api/v2/images/mini/model/source/1",headers:host})).statusCode).toBe(200);
+    await unlink(imagePath); await symlink("/etc/hosts",imagePath);
+    expect((await instance.inject({url:"/api/v2/images/mini/model/source/1",headers:host})).statusCode).toBe(404);
   });
 });

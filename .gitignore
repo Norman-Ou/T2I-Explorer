@@ -1,6 +1,8 @@
 # Local evaluation data can be large and machine-specific.
 data/eval-sets/**
 !data/eval-sets/.gitkeep
+data/datasets/**
+!data/datasets/.gitkeep
 
 # Dependencies and build output.
 node_modules/
