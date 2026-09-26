@@ -9,8 +9,8 @@ import staticPlugin from "@fastify/static";
 import Fastify, { type FastifyReply } from "fastify";
 import { CatalogStore } from "./catalog.js";
 
-type TupleParams = { eval: string; model: string; step: string };
-type ImageParams = TupleParams & { promptId: string };
+type TupleParams = { dataset: string; model: string; step: string };
+type ImageParams = TupleParams & { sampleIndex: string };
 
 function apiError(reply: FastifyReply, status: number, code: string, message: string, requestId: string) {
   return reply.code(status).send({ error: { code, message, request_id: requestId } });
@@ -65,20 +65,18 @@ export async function buildApp(options: { dataRoot: string; serveClient?: boolea
     }
   });
 
-  app.get("/api/v1/health", async () => ({ status: "ok" }));
+  app.get("/api/v2/health", async () => ({ status: "ok" }));
 
-  app.get("/api/v1/catalog", async (request, reply) => {
+  app.get("/api/v2/catalog", async (request, reply) => {
     await catalog.ensureFresh();
     const response = catalog.catalog();
     return sendJsonWithEtag(request, reply, response.snapshot_id, response);
   });
 
-  app.get<{ Params: TupleParams }>("/api/v1/eval-sets/:eval/models/:model/steps/:step", async (request, reply) => {
-    const step = parseInteger(request.params.step);
-    if (step === undefined) return apiError(reply, 400, "INVALID_TUPLE", "Step must be a non-negative integer.", request.id);
+  app.get<{ Params: TupleParams }>("/api/v2/datasets/:dataset/:model/:step", async (request, reply) => {
     try {
       await catalog.ensureFresh();
-      const dataset = await catalog.getDataset(request.params.eval, request.params.model, step);
+      const dataset = await catalog.getDataset(request.params.dataset, request.params.model, request.params.step);
       return sendJsonWithEtag(request, reply, dataset.snapshot_id, dataset);
     } catch (error) {
       const code = (error as { apiCode?: string }).apiCode ?? "DATASET_UNAVAILABLE";
@@ -86,12 +84,11 @@ export async function buildApp(options: { dataRoot: string; serveClient?: boolea
     }
   });
 
-  app.get<{ Params: ImageParams }>("/api/v1/images/:eval/:model/:step/:promptId", async (request, reply) => {
-    const step = parseInteger(request.params.step);
-    const promptId = parseInteger(request.params.promptId);
-    if (step === undefined || promptId === undefined) return apiError(reply, 400, "INVALID_IMAGE_TUPLE", "Step and prompt ID must be non-negative integers.", request.id);
+  app.get<{ Params: ImageParams }>("/api/v2/images/:dataset/:model/:step/:sampleIndex", async (request, reply) => {
+    const sampleIndex = parseInteger(request.params.sampleIndex);
+    if (sampleIndex === undefined || sampleIndex < 1 || sampleIndex > 30) return apiError(reply, 400, "INVALID_IMAGE_TUPLE", "Sample index must be 1..30.", request.id);
     try {
-      const image = await catalog.getImage(request.params.eval, request.params.model, step, promptId);
+      const image = await catalog.getImage(request.params.dataset, request.params.model, request.params.step, sampleIndex);
       const info = await stat(image.file);
       const etag = `"${info.size.toString(16)}-${Math.trunc(info.mtimeMs).toString(16)}"`;
       if (request.headers["if-none-match"] === etag) return reply.code(304).header("ETag", etag).send();
@@ -106,7 +103,7 @@ export async function buildApp(options: { dataRoot: string; serveClient?: boolea
     }
   });
 
-  app.post("/api/v1/reload", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+  app.post("/api/v2/reload", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
     const origin = request.headers.origin;
     if (origin) {
       try {

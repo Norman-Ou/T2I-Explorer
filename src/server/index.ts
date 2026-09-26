@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const dataRoot = path.resolve(process.env.T2I_DATA_ROOT ?? path.join(repositoryRoot, "data/eval-sets"));
+const dataRoot = path.resolve(process.env.T2I_DATA_ROOT ?? path.join(repositoryRoot, "data/datasets"));
 const port = Number(process.env.PORT ?? 4173);
 const host = process.env.HOST ?? "127.0.0.1";
 const networkEnabled = process.env.T2I_ALLOW_NETWORK === "true";

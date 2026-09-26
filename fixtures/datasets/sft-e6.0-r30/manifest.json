@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "record_schema_version": 2,
+  "id": "sft-e6.0-r30",
+  "title": "sft-e6.0-r30",
+  "description": "Synthetic contract fixture; no real R30 data",
+  "models": [
+    {
+      "id": "refseg",
+      "label": "RefSeg",
+      "steps": [
+        {
+          "id": "sior-t",
+          "label": "SIOR_T",
+          "review_stage": "accepted_e6_sft_row",
+          "status": "partial",
+          "record_count": 2,
+          "target_count": 30,
+          "shortfall_reason": "Fixture intentionally contains two records"
+        },
+        {
+          "id": "fast-t",
+          "label": "FAST_T",
+          "review_stage": "accepted_e6_sft_row",
+          "status": "blocked",
+          "record_count": 0,
+          "target_count": 30,
+          "shortfall_reason": "No fixture rows"
+        }
+      ]
+    }
+  ]
+}

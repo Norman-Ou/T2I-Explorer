@@ -8,15 +8,15 @@ import {
   type DatasetResponse,
   type Diagnostic,
   type ImageDescriptor,
-  type ManifestV1,
-  type RecordV1,
+  type ManifestV2,
+  type RecordV2,
   idPattern,
   manifestSchema,
   recordSchema
 } from "../shared/contracts.js";
 
 const limits = {
-  evalSets: 100,
+  datasetsLimit: 100,
   models: 200,
   pairs: 1000,
   setBytes: 100 * 1024 * 1024,
@@ -28,13 +28,13 @@ const limits = {
 };
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateManifest = ajv.compile<ManifestV1>(manifestSchema);
-const validateRecord = ajv.compile<RecordV1>(recordSchema);
+const validateManifest = ajv.compile<ManifestV2>(manifestSchema);
+const validateRecord = ajv.compile<RecordV2>(recordSchema);
 const idRegex = new RegExp(idPattern);
 
 type EvalEntry = {
   dir: string;
-  manifest: ManifestV1;
+  manifest: ManifestV2;
   fingerprint: string;
 };
 
@@ -184,10 +184,10 @@ export class CatalogStore {
     const children = await this.manifestDirectories();
     const diagnostics: Diagnostic[] = [];
     const next = new Map<string, EvalEntry>();
-    if (children.length > limits.evalSets) {
-      diagnostics.push(errorDiagnostic("RESOURCE_LIMIT_EXCEEDED", `Data root contains ${children.length} evaluation sets; maximum is ${limits.evalSets}.`));
+    if (children.length > limits.datasetsLimit) {
+      diagnostics.push(errorDiagnostic("RESOURCE_LIMIT_EXCEEDED", `Data root contains ${children.length} evaluation sets; maximum is ${limits.datasetsLimit}.`));
     }
-    for (const child of children.slice(0, limits.evalSets)) {
+    for (const child of children.slice(0, limits.datasetsLimit)) {
       const old = this.entries.get(child);
       try {
         if (!idRegex.test(child)) throw new Error("directory ID does not match the required identifier pattern");
@@ -198,18 +198,26 @@ export class CatalogStore {
         const parsed: unknown = JSON.parse(source);
         if (parsed && typeof parsed === "object") {
           const versions = parsed as { schema_version?: unknown; record_schema_version?: unknown };
-          if (versions.schema_version !== 1 || versions.record_schema_version !== 1) {
-            throw Object.assign(new Error("only manifest and record schema version 1 are supported"), { diagnosticCode: "UNSUPPORTED_SCHEMA_VERSION" as const });
+          if (versions.schema_version !== 2 || versions.record_schema_version !== 2) {
+            throw Object.assign(new Error("only manifest and record schema version 2 are supported"), { diagnosticCode: "UNSUPPORTED_SCHEMA_VERSION" as const });
           }
         }
         if (!validateManifest(parsed)) throw new Error(issueMessage(validateManifest.errors));
-        const manifest = parsed as ManifestV1;
+        const manifest = parsed as ManifestV2;
         if (manifest.id !== child) throw new Error(`manifest id must equal directory name ${child}`);
         const modelIds = new Set<string>();
         let pairs = 0;
         for (const model of manifest.models) {
           if (modelIds.has(model.id)) throw new Error(`duplicate model id ${model.id}`);
           modelIds.add(model.id);
+          const stepIds = new Set<string>();
+          for (const step of model.steps) {
+            if (stepIds.has(step.id)) throw new Error(`duplicate step id ${step.id}`);
+            stepIds.add(step.id);
+            if (step.status === "complete" && step.record_count !== 30) throw new Error(`complete pair ${step.id} must have 30 records`);
+            if (step.status !== "complete" && !step.shortfall_reason) throw new Error(`incomplete pair ${step.id} needs a shortfall reason`);
+            if (step.status === "blocked" && step.record_count !== 0) throw new Error(`blocked pair ${step.id} must have zero records`);
+          }
           pairs += model.steps.length;
         }
         if (manifest.models.length > limits.models || pairs > limits.pairs) throw new Error("manifest exceeds model or model/step limits");
@@ -221,12 +229,12 @@ export class CatalogStore {
       } catch (error) {
         const code = (error as { diagnosticCode?: Diagnostic["code"] }).diagnosticCode ?? "MANIFEST_INVALID";
         diagnostics.push(errorDiagnostic(code, `Invalid manifest: ${error instanceof Error ? error.message : String(error)}`, {
-          eval_set_id: child,
+          dataset_id: child,
           public_path: `${child}/manifest.json`
         }));
         if (old) {
           next.set(child, old);
-          diagnostics.push(errorDiagnostic("STALE_SNAPSHOT", "The last valid manifest snapshot remains active.", { eval_set_id: child }));
+          diagnostics.push(errorDiagnostic("STALE_SNAPSHOT", "The last valid manifest snapshot remains active.", { dataset_id: child }));
         }
       }
     }
@@ -237,7 +245,7 @@ export class CatalogStore {
     if (forceDatasets) {
       for (const key of [...this.datasets.keys()]) {
         const [evalId, modelId, stepText] = key.split("\0");
-        if (evalId && modelId && stepText) await this.getDataset(evalId, modelId, Number(stepText), true).catch(() => undefined);
+        if (evalId && modelId && stepText) await this.getDataset(evalId, modelId, stepText, true).catch(() => undefined);
       }
     }
     return this.catalog();
@@ -246,33 +254,33 @@ export class CatalogStore {
   catalog(): CatalogResponse {
     return {
       snapshot_id: this.snapshotId,
-      eval_sets: [...this.entries.values()].map(({ manifest }) => ({
+      datasets: [...this.entries.values()].map(({ manifest }) => ({
         id: manifest.id,
         title: manifest.title,
         ...(manifest.description === undefined ? {} : { description: manifest.description }),
         record_schema_version: manifest.record_schema_version,
-        models: manifest.models.map((model) => ({ ...model, steps: [...model.steps].sort((a, b) => a - b) }))
+        models: manifest.models.map((model) => ({ ...model, steps: [...model.steps] }))
       })),
       diagnostics: this.catalogDiagnostics
     };
   }
 
-  private resolveTuple(evalId: string, modelId: string, step: number): EvalEntry {
-    if (!idRegex.test(evalId) || !idRegex.test(modelId) || !Number.isInteger(step) || step < 0 || step > 2147483647) {
+  private resolveTuple(evalId: string, modelId: string, step: string): EvalEntry {
+    if (!idRegex.test(evalId) || !idRegex.test(modelId) || !idRegex.test(step)) {
       throw new Error("invalid evaluation-set, model, or step identifier");
     }
     const entry = this.entries.get(evalId);
     const model = entry?.manifest.models.find((candidate) => candidate.id === modelId);
-    if (!entry || !model?.steps.includes(step)) throw new Error("model/step is not declared by the active manifest");
+    if (!entry || !model?.steps.some((candidate) => candidate.id === step)) throw new Error("model/step is not declared by the active manifest");
     return entry;
   }
 
-  async getDataset(evalId: string, modelId: string, step: number, force = false): Promise<DatasetResponse> {
+  async getDataset(evalId: string, modelId: string, step: string, force = false): Promise<DatasetResponse> {
     const entry = this.resolveTuple(evalId, modelId, step);
     const key = `${evalId}\0${modelId}\0${step}`;
     const previous = this.datasets.get(key);
     try {
-      const setPath = await safeFile(this.root, [evalId, "models", modelId, `s${step}`, "set.json"]);
+      const setPath = await safeFile(this.root, [evalId, modelId, step, "set.json"]);
       const info = await stat(setPath);
       if (info.size > limits.setBytes) throw new Error(`set.json exceeds ${limits.setBytes} bytes`);
       const fingerprint = hashParts(entry.fingerprint, info.size, info.mtimeMs);
@@ -282,19 +290,22 @@ export class CatalogStore {
       if (!Array.isArray(parsed)) throw new Error("set.json must be a JSON array");
       if (parsed.length > limits.records) throw new Error(`set.json exceeds ${limits.records} records`);
       const diagnostics: Diagnostic[] = [];
-      const records: RecordV1[] = [];
+      const records: RecordV2[] = [];
+      const declaredStep = entry.manifest.models.find((model) => model.id === modelId)?.steps.find((candidate) => candidate.id === step);
+      if (!declaredStep) throw new Error("undeclared step");
+      if (parsed.length !== declaredStep.record_count) throw Object.assign(new Error(`declared ${declaredStep.record_count} records but found ${parsed.length}`), { apiCode: "COUNT_MISMATCH" });
       const seen = new Map<number, number>();
       let duplicate = false;
       parsed.forEach((candidate, index) => {
         if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-          const promptId = (candidate as { prompt_id?: unknown }).prompt_id;
-          if (Number.isSafeInteger(promptId) && Number(promptId) >= 0) {
-            const id = Number(promptId);
+          const sampleIndex = (candidate as { sample_index?: unknown }).sample_index;
+          if (Number.isSafeInteger(sampleIndex) && Number(sampleIndex) >= 1) {
+            const id = Number(sampleIndex);
             if (seen.has(id)) {
               duplicate = true;
-              diagnostics.push(errorDiagnostic("DUPLICATE_PROMPT_ID", `Prompt ID ${id} occurs more than once.`, {
-                eval_set_id: evalId, model_id: modelId, step, record_index: index, prompt_id: id,
-                public_path: `${evalId}/models/${modelId}/s${step}/set.json`
+              diagnostics.push(errorDiagnostic("DUPLICATE_SAMPLE_INDEX", `Sample index ${id} occurs more than once.`, {
+                dataset_id: evalId, model_id: modelId, step_id: step, record_index: index, sample_index: id,
+                public_path: `${evalId}/${modelId}/${step}/set.json`
               }));
             } else seen.set(id, index);
           }
@@ -303,33 +314,40 @@ export class CatalogStore {
         const encodedBytes = Buffer.byteLength(JSON.stringify(candidate));
         if (shape.depth > limits.depth || shape.nodes > limits.recordNodes || encodedBytes > limits.recordBytes) {
           diagnostics.push(errorDiagnostic("RESOURCE_LIMIT_EXCEEDED", `Record ${index} exceeds nesting, item, or byte limits.`, {
-            eval_set_id: evalId, model_id: modelId, step, record_index: index
+            dataset_id: evalId, model_id: modelId, step_id: step, record_index: index
           }));
           return;
         }
         if (!validateRecord(candidate)) {
           diagnostics.push(errorDiagnostic("RECORD_INVALID", `Invalid record: ${issueMessage(validateRecord.errors)}`, {
-            eval_set_id: evalId, model_id: modelId, step, record_index: index,
-            public_path: `${evalId}/models/${modelId}/s${step}/set.json`
+            dataset_id: evalId, model_id: modelId, step_id: step, record_index: index,
+            public_path: `${evalId}/${modelId}/${step}/set.json`
           }));
+          return;
+        }
+        if (candidate.review_stage !== declaredStep.review_stage) {
+          diagnostics.push(errorDiagnostic("RECORD_INVALID", `Record ${index} review stage differs from manifest.`, { dataset_id: evalId, model_id: modelId, step_id: step, record_index: index }));
           return;
         }
         records.push(candidate);
       });
-      if (duplicate) throw Object.assign(new Error("duplicate prompt IDs make the dataset ambiguous"), { diagnostics });
+      if (duplicate) throw Object.assign(new Error("duplicate sample indices make the dataset ambiguous"), { diagnostics });
+      if (records.length !== parsed.length || records.some((record, index) => record.sample_index !== index + 1)) {
+        throw Object.assign(new Error("records must be valid with contiguous sample_index 1..N"), { apiCode: "RECORD_INVALID", diagnostics });
+      }
 
       const images: Record<string, ImageDescriptor> = Object.create(null) as Record<string, ImageDescriptor>;
       const imageFiles = new Map<number, string>();
       for (const record of records) {
-        const result = await this.inspectImage(evalId, modelId, step, record.prompt_id);
-        images[String(record.prompt_id)] = result.descriptor;
-        if (result.file) imageFiles.set(record.prompt_id, result.file);
+        const result = await this.inspectImage(evalId, modelId, step, record.sample_index);
+        images[String(record.sample_index)] = result.descriptor;
+        if (result.file) imageFiles.set(record.sample_index, result.file);
         diagnostics.push(...result.diagnostics);
       }
       const response: DatasetResponse = {
-        eval_set_id: evalId,
+        dataset_id: evalId,
         model_id: modelId,
-        step,
+        step_id: step,
         snapshot_id: hashParts(fingerprint, records.length, diagnostics.length),
         records,
         images,
@@ -345,15 +363,15 @@ export class CatalogStore {
             ...previous.response.diagnostics,
             ...((error as { diagnostics?: Diagnostic[] }).diagnostics ?? []),
             errorDiagnostic("STALE_SNAPSHOT", `The changed dataset is invalid; the last valid snapshot remains active: ${error instanceof Error ? error.message : String(error)}`, {
-              eval_set_id: evalId, model_id: modelId, step
+              dataset_id: evalId, model_id: modelId, step_id: step
             })
           ]
         };
       }
       const failure = error as Error & { apiCode?: string; diagnostics?: Diagnostic[] };
       if (!failure.apiCode) {
-        failure.apiCode = failure.diagnostics?.some((item) => item.code === "DUPLICATE_PROMPT_ID")
-          ? "DUPLICATE_PROMPT_ID"
+        failure.apiCode = failure.diagnostics?.some((item) => item.code === "DUPLICATE_SAMPLE_INDEX")
+          ? "DUPLICATE_SAMPLE_INDEX"
           : failure.message.includes("exceeds")
             ? "RESOURCE_LIMIT_EXCEEDED"
             : "SET_JSON_INVALID";
@@ -362,16 +380,16 @@ export class CatalogStore {
     }
   }
 
-  private async inspectImage(evalId: string, modelId: string, step: number, promptId: number): Promise<{
+  private async inspectImage(evalId: string, modelId: string, step: string, sampleIndex: number): Promise<{
     descriptor: ImageDescriptor;
     diagnostics: Diagnostic[];
     file?: string;
   }> {
-    const base = [evalId, "models", modelId, `s${step}`];
+    const base = [evalId, modelId, step];
     const candidates = ["webp", "png", "jpg", "jpeg"];
     const found: Array<{ name: string; file: string }> = [];
     for (const extension of candidates) {
-      const name = `p${promptId}.${extension}`;
+      const name = `sample-${sampleIndex}.${extension}`;
       try {
         const file = await safeFile(this.root, [...base, name]);
         const info = await stat(file);
@@ -380,12 +398,12 @@ export class CatalogStore {
         // A missing candidate is expected while checking precedence.
       }
     }
-    const context = { eval_set_id: evalId, model_id: modelId, step, prompt_id: promptId };
+    const context = { dataset_id: evalId, model_id: modelId, step_id: step, sample_index: sampleIndex };
     if (!found.length) {
       return {
-        descriptor: { status: "missing", file_name: `p${promptId}.webp` },
-        diagnostics: [errorDiagnostic("IMAGE_MISSING", `No supported image exists for prompt ID ${promptId}.`, {
-          ...context, public_path: `${base.join("/")}/p${promptId}.webp`
+        descriptor: { status: "missing", file_name: `sample-${sampleIndex}.png` },
+        diagnostics: [errorDiagnostic("IMAGE_MISSING", `No supported image exists for sample ${sampleIndex}.`, {
+          ...context, public_path: `${base.join("/")}/p${sampleIndex}.webp`
         })]
       };
     }
@@ -410,7 +428,7 @@ export class CatalogStore {
       if (!type) throw new Error("file signature does not match its supported extension");
       const dimensions = imageSize(header);
       if (!dimensions.width || !dimensions.height) throw new Error("image dimensions are unavailable");
-      const url = `/api/v1/images/${encodeURIComponent(evalId)}/${encodeURIComponent(modelId)}/${step}/${promptId}`;
+      const url = `/api/v2/images/${encodeURIComponent(evalId)}/${encodeURIComponent(modelId)}/${encodeURIComponent(step)}/${sampleIndex}`;
       return {
         descriptor: {
           status: found.length > 1 ? "ambiguous" : "available",
@@ -431,13 +449,13 @@ export class CatalogStore {
     }
   }
 
-  async getImage(evalId: string, modelId: string, step: number, promptId: number): Promise<{ file: string; descriptor: ImageDescriptor }> {
-    if (!Number.isSafeInteger(promptId) || promptId < 0) throw new Error("invalid prompt ID");
+  async getImage(evalId: string, modelId: string, step: string, sampleIndex: number): Promise<{ file: string; descriptor: ImageDescriptor }> {
+    if (!Number.isSafeInteger(sampleIndex) || sampleIndex < 1 || sampleIndex > 30) throw new Error("invalid sample index");
     const response = await this.getDataset(evalId, modelId, step);
-    const descriptor = response.images[String(promptId)];
-    const cache = this.datasets.get(`${evalId}\0${modelId}\0${step}`);
-    const file = cache?.imageFiles.get(promptId);
-    if (!descriptor || !file || !descriptor.media_type) throw new Error("image is unavailable");
-    return { file, descriptor };
+    if (!response.records.some((record) => record.sample_index === sampleIndex)) throw new Error("sample is not declared");
+    // Revalidate on every media request; a file may have changed after a cached set was read.
+    const current = await this.inspectImage(evalId, modelId, step, sampleIndex);
+    if (!current.file || !current.descriptor.media_type) throw new Error("image is unavailable");
+    return { file: current.file, descriptor: current.descriptor };
   }
 }

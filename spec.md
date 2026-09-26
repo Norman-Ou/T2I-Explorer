@@ -1,6 +1,6 @@
 # T2I Explorer Requirements and Design Specification
 
-Status: Implemented for the local Models milestone; external release sign-offs remain pending  
+Status: historical v1 milestone; current v2 authority is [spec-r30-v2.md](spec-r30-v2.md). External release sign-offs remain pending
 Source of truth: `intent.md` at commit `3f40258`  
 Prepared: 2026-09-18  
 Initial release target: Models view (Milestone 1)

@@ -1,73 +1,52 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-
-async function buildComparison(page: import("@playwright/test").Page) {
-  await page.goto("/");
-  await page.getByLabel("Evaluation set").selectOption("sample-eval");
-  await page.getByRole("button", { name: "Add Model A · 1000" }).click();
-  await page.getByRole("button", { name: "Add Model B · 2000" }).click();
-  await expect(page.getByText("4 aligned rows")).toBeVisible();
-}
-
-test("compares model-owned records, gaps, details, and shareable state", async ({ page }) => {
-  await buildComparison(page);
-  await expect(page.getByText("A red square on a white background")).toBeVisible();
-  await expect(page.getByText("A scarlet geometric tile")).toBeVisible();
-  await expect(page.getByText("No record", { exact: true })).toHaveCount(2);
-
-  const imageButton = page.getByRole("button", { name: "Open generated image for prompt ID 1, Model B, step 2000" });
-  await imageButton.click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: "Model B · step 2000 · prompt ID 1" })).toBeVisible();
-  await expect(dialog.getByText("metadata")).toBeVisible();
-  await dialog.getByRole("button", { name: "Close" }).click();
-  await expect(imageButton).toBeFocused();
-
-  await page.getByLabel("Search prompts").fill("greenhouse");
-  await expect(page.getByText("1 aligned rows")).toBeVisible();
-  await expect(page).toHaveURL(/q=greenhouse/);
-  const url = page.url();
-  await page.goto(url);
-  await expect(page.getByText("A glass greenhouse in winter")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Remove Model A/ })).toBeVisible();
-});
-
-test("supports keyboard column reorder, deterministic shuffle, and navigation resizing", async ({ page }) => {
-  await buildComparison(page);
-  const source = await page.getByRole("button", { name: "Drag Model A, step 1000" }).boundingBox();
-  const target = await page.getByRole("button", { name: "Drag Model B, step 2000" }).boundingBox();
-  expect(source).not.toBeNull();
-  expect(target).not.toBeNull();
-  await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await expect(page).toHaveURL(/cols=model-b%3A2000%2Cmodel-a%3A1000/);
-  await page.getByRole("button", { name: "Move Model B right" }).click();
-  await expect(page).toHaveURL(/cols=model-a%3A1000%2Cmodel-b%3A2000/);
-  await page.getByRole("button", { name: "Shuffle" }).click();
-  await expect(page).toHaveURL(/order=shuffle/);
+test("landing discovers datasets and restores duplicate named-step columns", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading",{name:"Text-to-Image Explorer",exact:true}).last()).toBeVisible();
+  await expect(page.getByRole("button",{name:/sft-e6.0-r30/})).toBeVisible();
+  await page.getByRole("button",{name:/sft-e6.0-r30/}).click();
+  await page.getByRole("button",{name:"Add column"}).click();
+  await page.getByRole("button",{name:"RefSeg →"}).click();
+  await page.getByRole("button",{name:/RefSeg · SIOR_T/}).click();
+  await expect(page.getByText("fixture-sior-t-1")).toBeVisible();
+  await page.getByRole("button",{name:"Add column"}).click();
+  await page.getByRole("button",{name:"RefSeg →"}).click();
+  await page.getByRole("button",{name:/RefSeg · SIOR_T/}).click();
+  await expect(page.getByRole("button",{name:/Remove RefSeg, SIOR_T/})).toHaveCount(2);
+  await expect(page).toHaveURL(/cols=/);
   await page.reload();
-  await expect(page.getByText("4 aligned rows")).toBeVisible();
-
-  const separator = page.getByRole("separator", { name: "Resize navigation" });
-  await separator.focus();
-  await separator.press("ArrowRight");
-  await expect(separator).toBeFocused();
+  await expect(page.getByRole("button",{name:/Remove RefSeg, SIOR_T/})).toHaveCount(2);
+  await page.getByRole("button",{name:/Open three-panel review for fixture-sior-t-1/}).first().click();
+  const dialog = page.getByRole("dialog"); await expect(dialog.locator(".exact-text").first()).toBeVisible();
+  await expect(dialog.getByText("(exact empty string)")).toBeVisible();
+  await dialog.getByRole("button",{name:"Close"}).click();
 });
-
-test("has no automatically detectable serious accessibility violations", async ({ page }) => {
-  await buildComparison(page);
-  const results = await new AxeBuilder({ page }).analyze();
-  expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+test("Steps picker, search, keyboard resizing and accessibility", async ({ page }) => {
+  await page.goto("/?dataset=sft-e6.0-r30&mode=steps", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button",{name:"Add column"}).click();
+  await page.getByRole("button",{name:"SIOR_T →"}).click();
+  await page.getByRole("button",{name:/RefSeg · SIOR_T/}).click();
+  await page.getByLabel("Search examples").fill("fixture-sior-t-2");
+  await expect(page.getByText("1 ordinal rows")).toBeVisible();
+  const separator = page.getByRole("separator",{name:"Resize navigation"}); await separator.focus(); await separator.press("ArrowRight");
+  expect(await new AxeBuilder({page}).analyze()).toHaveProperty("violations",[]);
 });
-
-test("keeps the application chrome usable at a 320px viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 800 });
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "T2I Explorer" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Hide navigation" })).toBeVisible();
-  await page.getByRole("button", { name: "Hide navigation" }).click();
-  await expect(page.getByRole("button", { name: "Show navigation" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= 320)).toBe(true);
+test("chooser handles no published dataset and a single published dataset", async ({ page }) => {
+  await page.route("**/api/v2/catalog", async (route) => {
+    await route.fulfill({ json: { snapshot_id: "empty", datasets: [], diagnostics: [] } });
+  });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("0 datasets")).toBeVisible();
+  await expect(page.getByText("No published datasets match this search.")).toBeVisible();
+  await page.unroute("**/api/v2/catalog");
+  await page.getByRole("button", { name: "Reload data" }).click();
+  await expect(page.getByText("2 datasets")).toBeVisible();
+  await page.route("**/api/v2/catalog", async (route) => {
+    const response = await route.fetch(); const body = await response.json();
+    await route.fulfill({ json: { ...body, datasets: body.datasets.filter((item: { id: string }) => item.id === "sft-e6.0-r30") } });
+  });
+  await page.reload();
+  await expect(page.getByText("1 datasets")).toBeVisible();
+  await expect(page.getByRole("button",{name:/sft-e6.0-r30/})).toBeVisible();
+  await expect(page.getByRole("combobox",{name:"Dataset"})).toHaveValue("");
 });
