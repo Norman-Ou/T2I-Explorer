@@ -1,0 +1,9 @@
+{
+  "schema_version": 3,
+  "id": "candidate",
+  "title": "Candidate",
+  "record_count": 3,
+  "metadata": {
+    "fixture": true
+  }
+}

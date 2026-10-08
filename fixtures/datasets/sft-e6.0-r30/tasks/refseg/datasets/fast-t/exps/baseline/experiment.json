@@ -1,0 +1,9 @@
+{
+  "schema_version": 3,
+  "id": "baseline",
+  "title": "Baseline",
+  "record_count": 2,
+  "metadata": {
+    "fixture": true
+  }
+}

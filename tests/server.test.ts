@@ -1,92 +1,138 @@
-import { copyFile, cp, mkdir, mkdtemp, symlink, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/server/app.js";
-import type { CatalogResponse, DatasetResponse } from "../src/shared/contracts.js";
-const fixtureRoot = path.resolve("fixtures/datasets"); const apps: FastifyInstance[] = [];
-afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
-async function app(root = fixtureRoot) { const instance = await buildApp({ dataRoot: root, serveClient: false }); apps.push(instance); return instance; }
-async function miniRoot(records: unknown[], count = records.length, stage = "accepted_e6_sft_row") {
-  const root = await mkdtemp(path.join(os.tmpdir(),"t2i-v2-")); const step = path.join(root,"mini/model/source"); await mkdir(step,{recursive:true});
-  await writeFile(path.join(root,"mini/manifest.json"),JSON.stringify({ schema_version:2,record_schema_version:2,id:"mini",title:"Mini",models:[{id:"model",label:"Model",steps:[{id:"source",label:"Source",review_stage:stage,status:"partial",record_count:count,target_count:30,shortfall_reason:"Fixture"}]}] }));
-  await writeFile(path.join(step,"set.json"),JSON.stringify(records)); return root;
+import { mkdtemp, mkdir, writeFile, rm, copyFile, symlink, unlink, readFile, rename, cp } from 'node:fs/promises';
+import { imageSize } from 'image-size';
+import { loadCollection } from '../src/server/dataFormat.js';
+import sharp from 'sharp';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { buildApp } from '../src/server/app.js';
+const apps: FastifyInstance[] = [], roots: string[] = [];
+afterEach(async () => { await Promise.all(apps.splice(0).map(a => a.close())); await Promise.all(roots.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
+const host = { host: '127.0.0.1' };
+async function setup() {
+    const root = await mkdtemp(path.join(os.tmpdir(), 't2i-api-'));
+    roots.push(root);
+    const exp = path.join(root, 'mini/tasks/task/datasets/source/exps/baseline');
+    await mkdir(path.join(exp, 'assets'), { recursive: true });
+    await writeFile(path.join(root, 'mini/collection.json'), JSON.stringify({ schema_version: 3, id: 'mini', title: 'Mini', tasks: [{ id: 'task', title: 'Task', datasets: [{ id: 'source', title: 'Source', data_origin: 'native', exps: [{ id: 'baseline' }] }] }] }));
+    await writeFile(path.join(exp, 'experiment.json'), JSON.stringify({ schema_version: 3, id: 'baseline', title: 'Baseline', record_count: 1, metadata: {} }));
+    await copyFile('fixtures/datasets/sft-e6.0-r30/tasks/refseg/datasets/sior-t/exps/baseline/assets/original_image.png', path.join(exp, 'assets/original.png'));
+    await writeFile(path.join(exp, 'samples.jsonl'), JSON.stringify({ sample_id: 'stable-A', index: 57, input_text: '', pred_text: null, gt_text: 'GT', panels: [{ id: 'original', title: 'Original', asset: 'assets/original.png' }, { id: 'mask', title: 'Mask', asset: null, unavailable_reason: 'No mask supplied' }], metadata: {} }) + '\n');
+    const app = await buildApp({ dataRoot: root, serveClient: false });
+    apps.push(app);
+    return { app, root, exp };
 }
-const host = { host: "127.0.0.1" };
-describe("v2 API", () => {
-  it("serves five-panel baseline validation predictions with their exact output text", async () => {
-    const row = {sample_index:1,source_sample_id:"validation-1",review_stage:"baseline_validation_prediction",message_input_text:"Segment the ship",message_output_text:"",source_annotation_text:"GT ship",source_dataset:"SIOR_T",source_split:"valid",source_manifest_path:null,panel_roles:["original image","pred_overlay","gt_overlay","pred_mask","gt_mask"],asset_paths:{},evidence:{num_timesteps:50}};
-    const root = await miniRoot([row],1,"baseline_validation_prediction");
-    await copyFile(path.join(fixtureRoot,"sft-e6.0-r30/refseg/sior-t/sample-1.png"),path.join(root,"mini/model/source/sample-1.png"));
-    const instance = await app(root);
-    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
+it('serves sole catalog/record/media routes with authoritative experiment titles and exact text', async () => {
+    const { app } = await setup();
+    const catalog = await app.inject({ url: '/api/catalog', headers: host });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().collections[0].tasks[0].datasets[0].exps[0].title).toBe('Baseline');
+    expect((await app.inject({ url: '/api/catalog', headers: { ...host, 'if-none-match': catalog.headers.etag! } })).statusCode).toBe(304);
+    const response = await app.inject({ url: '/api/collections/mini/tasks/task/datasets/source/exps/baseline/records', headers: host });
     expect(response.statusCode).toBe(200);
-    const body = response.json<DatasetResponse>();
-    expect(body.records[0]?.panel_roles).toEqual(["original image","pred_overlay","gt_overlay","pred_mask","gt_mask"]);
-    expect(body.records[0]?.message_output_text).toBe("");
-    expect(body.images["1"]?.status).toBe("available");
-  });
-  it("rejects incomplete four-panel records while retaining three-panel compatibility", async () => {
-    const row = {sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","pred_overlay","gt_overlay","pred_mask"],asset_paths:{},evidence:{}};
-    const instance = await app(await miniRoot([row]));
-    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
-    expect(response.statusCode).toBe(422);
-    expect(response.json().error.code).toBe("RECORD_INVALID");
-  });
-  it("discovers independent datasets, including an empty root", async () => {
-    const empty = await app(await mkdtemp(path.join(os.tmpdir(),"t2i-empty-")));
-    expect((await empty.inject({url:"/api/v2/catalog",headers:host})).json<CatalogResponse>().datasets).toEqual([]);
-    const instance = await app(); const response = await instance.inject({url:"/api/v2/catalog",headers:host});
-    expect(response.statusCode).toBe(200); expect(response.json<CatalogResponse>().datasets.map((x) => x.id)).toEqual(["basemodel-task-r30","sft-e6.0-r30"]);
-    expect((await instance.inject({url:"/api/v2/catalog",headers:{...host,"if-none-match":response.headers.etag!}})).statusCode).toBe(304);
-    const oneRoot = await mkdtemp(path.join(os.tmpdir(),"t2i-one-"));
-    await cp(path.join(fixtureRoot,"sft-e6.0-r30"),path.join(oneRoot,"sft-e6.0-r30"),{recursive:true});
-    const one = await app(oneRoot);
-    expect((await one.inject({url:"/api/v2/catalog",headers:host})).json<CatalogResponse>().datasets.map((x) => x.id)).toEqual(["sft-e6.0-r30"]);
-  });
-  it("returns exact text, named step and a rooted image", async () => {
-    const instance = await app(); const response = await instance.inject({url:"/api/v2/datasets/sft-e6.0-r30/refseg/sior-t",headers:host});
-    expect(response.statusCode).toBe(200); const body = response.json<DatasetResponse>();
-    expect(body.records[0]?.message_input_text).toContain("<SEG>"); expect(body.records[0]?.message_output_text).toBe("");
-    expect(body.images["1"]?.url).toContain("/api/v2/images/");
-    const image = await instance.inject({url:body.images["1"]!.url!,headers:host}); expect(image.statusCode).toBe(200); expect(image.headers["content-type"]).toContain("image/png");
-    expect(body.records[0]?.panel_roles).toEqual(["original","input_aux","output"]);
-  });
-  it("shows blocked steps as empty without synthetic records", async () => {
-    const instance = await app(); const response = await instance.inject({url:"/api/v2/datasets/basemodel-task-r30/refseg/official",headers:host});
-    expect(response.statusCode).toBe(200); expect(response.json<DatasetResponse>().records).toEqual([]);
-  });
-  it("keeps paper text separate from unavailable training Message text", async () => {
-    const row = {sample_index:1,source_sample_id:"paper:fig9:fish",review_stage:"paper_example",message_input_text:null,message_output_text:null,paper_input_text:"<p>fish</p>",paper_output_text:null,source_annotation_text:null,source_dataset:"Dense200",source_split:"not established",source_manifest_path:null,panel_roles:["paper input","paper figure","paper output"],asset_paths:{},evidence:{}};
-    const instance = await app(await miniRoot([row],1,"paper_example"));
-    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
-    expect(response.statusCode).toBe(200);
-    const published = response.json<DatasetResponse>().records[0]!;
-    expect(published.message_input_text).toBeNull();
-    expect(published.paper_input_text).toBe("<p>fish</p>");
-  });
-  it("rejects count mismatch, path escape, and undeclared tuples", async () => {
-    const instance = await app(await miniRoot([],1));
-    expect((await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host})).json().error.code).toBe("COUNT_MISMATCH");
-    expect((await instance.inject({url:"/api/v2/datasets/mini/model/../source",headers:host})).statusCode).not.toBe(200);
-    expect((await instance.inject({url:"/api/v2/datasets/mini/model/other",headers:host})).statusCode).toBe(422);
-  });
-  it("rejects symlinked media and non-loopback host", async () => {
-    const root = await miniRoot([{sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","auxiliary","output"],asset_paths:{},evidence:{}}]);
-    await symlink("/etc/hosts",path.join(root,"mini/model/source/sample-1.png"));
-    const instance = await app(root);
-    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
-    expect(response.json<DatasetResponse>().images["1"]?.status).toBe("missing");
-    expect((await instance.inject({url:"/api/v2/catalog",headers:{host:"example.com"}})).statusCode).toBe(403);
-  });
-  it("revalidates a cached image after its file is replaced", async () => {
-    const row = {sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","auxiliary","output"],asset_paths:{},evidence:{}};
-    const root = await miniRoot([row]); const imagePath = path.join(root,"mini/model/source/sample-1.png");
-    await copyFile(path.join(fixtureRoot,"sft-e6.0-r30/refseg/sior-t/sample-1.png"),imagePath);
-    const instance = await app(root);
-    expect((await instance.inject({url:"/api/v2/images/mini/model/source/1",headers:host})).statusCode).toBe(200);
-    await unlink(imagePath); await symlink("/etc/hosts",imagePath);
-    expect((await instance.inject({url:"/api/v2/images/mini/model/source/1",headers:host})).statusCode).toBe(404);
-  });
+    const record = response.json().records[0];
+    expect(record).toMatchObject({ index: 57, input_text: '', pred_text: null, gt_text: 'GT' });
+    expect(record.panels[0]).not.toHaveProperty('asset');
+    expect(record.panels[1]).toMatchObject({ status: 'missing', unavailable_reason: 'No mask supplied' });
+    const image = await app.inject({ url: record.panels[0].url, headers: host });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers['content-type']).toContain('image/png');
+    expect((await app.inject({ url: '/api/media/mini/task/source/baseline/stable-A/undeclared', headers: host })).statusCode).toBe(404);
+});
+it('rejects all legacy routes and non-allowlisted hosts, enforces reload origin', async () => {
+    const { app } = await setup();
+    for (const url of ['/api/v2/catalog', '/api/v3/catalog', '/api/v2/health', '/api/v3/datasets/x/y/z/e'])
+        expect((await app.inject({ url, headers: host })).statusCode).toBe(404);
+    expect((await app.inject({ url: '/api/catalog', headers: { host: 'evil.test' } })).statusCode).toBe(403);
+    expect((await app.inject({ url: '/api/reload', method: 'POST', headers: { ...host, origin: 'https://evil.test' } })).statusCode).toBe(403);
+});
+it('revalidates media after replacement with a symlink and invalidates malformed experiments', async () => {
+    const { app, exp } = await setup();
+    await unlink(path.join(exp, 'assets/original.png'));
+    await symlink('/etc/hosts', path.join(exp, 'assets/original.png'));
+    expect((await app.inject({ url: '/api/media/mini/task/source/baseline/stable-A/original', headers: host })).statusCode).toBe(404);
+    await writeFile(path.join(exp, 'samples.jsonl'), 'invalid json');
+    await app.inject({ url: '/api/reload', method: 'POST', headers: host });
+    expect((await app.inject({ url: '/api/catalog', headers: host })).json().collections).toEqual([]);
+});
+it('ignores old-format packages rather than adapting them', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 't2i-old-'));
+    roots.push(root);
+    await mkdir(path.join(root, 'old'));
+    await writeFile(path.join(root, 'old/manifest.json'), JSON.stringify({ schema_version: 2, id: 'old', models: [] }));
+    const app = await buildApp({ dataRoot: root, serveClient: false });
+    apps.push(app);
+    expect((await app.inject({ url: '/api/catalog', headers: host })).json().collections).toEqual([]);
+});
+it('isolates malformed directory traversal and keeps valid collections available',async()=>{
+ const {app,root}=await setup();await mkdir(path.join(root,'bad',...Array.from({length:22},(_,i)=>`nested-${i}`)),{recursive:true});
+ const response=await app.inject({url:'/api/reload',method:'POST',headers:host});expect(response.statusCode).toBe(200);expect(response.json().collections.map((c:{id:string})=>c.id)).toEqual(['mini']);expect(response.json().diagnostics).toContainEqual(expect.objectContaining({collection_id:'bad',severity:'error'}));
+});
+
+it('keeps metadata and healthy panels available when a declared image disappears, while import validation stays strict', async () => {
+    const { app, root, exp } = await setup();
+    await unlink(path.join(exp, 'assets/original.png'));
+    const refreshed = await app.inject({ url: '/api/reload', method: 'POST', headers: host });
+    expect(refreshed.json().collections.map((c: { id: string }) => c.id)).toEqual(['mini']);
+    const records = await app.inject({ url: '/api/collections/mini/tasks/task/datasets/source/exps/baseline/records', headers: host });
+    expect(records.statusCode).toBe(200);
+    expect(records.json().records[0].panels[0].url).toBe('/api/media/mini/task/source/baseline/stable-A/original');
+    expect((await app.inject({ url: records.json().records[0].panels[0].url, headers: host })).statusCode).toBe(404);
+    await expect(loadCollection(path.join(root, 'mini'))).rejects.toThrow();
+});
+
+it('serves independent WebP thumbnails and untouched original bytes with separate cache validators', async () => {
+    const { app, exp } = await setup();
+    const records = (await app.inject({ url: '/api/collections/mini/tasks/task/datasets/source/exps/baseline/records', headers: host })).json();
+    const panel = records.records[0].panels[0];
+    expect(panel.thumbnail_url).toBe(`${panel.url}?variant=thumbnail`);
+    const thumbnail = await app.inject({ url: panel.thumbnail_url, headers: host });
+    expect(thumbnail.statusCode).toBe(200);
+    expect(thumbnail.headers['content-type']).toBe('image/webp');
+    expect(imageSize(thumbnail.rawPayload).width).toBeLessThanOrEqual(512);
+    expect(imageSize(thumbnail.rawPayload).height).toBeLessThanOrEqual(512);
+    const original = await app.inject({ url: panel.url, headers: host });
+    expect(original.rawPayload).toEqual(await readFile(path.join(exp, 'assets/original.png')));
+    expect(original.headers.etag).not.toBe(thumbnail.headers.etag);
+    expect((await app.inject({ url: panel.thumbnail_url, headers: { ...host, 'if-none-match': thumbnail.headers.etag! } })).statusCode).toBe(304);
+    expect((await app.inject({ url: `${panel.url}?variant=unknown`, headers: host })).statusCode).toBe(400);
+    await unlink(path.join(exp, 'assets/original.png'));
+    await symlink('/etc/hosts', path.join(exp, 'assets/original.png'));
+    expect((await app.inject({ url: panel.thumbnail_url, headers: { ...host, 'if-none-match': thumbnail.headers.etag! } })).statusCode).toBe(404);
+});
+
+it('downsizes large images and invalidates cached previews when the source is replaced', async () => {
+    const { app, exp } = await setup();
+    const file = path.join(exp, 'assets/original.png');
+    await sharp({ create: { width: 1600, height: 800, channels: 3, background: '#13579b' } }).png().toFile(file);
+    const url = '/api/media/mini/task/source/baseline/stable-A/original?variant=thumbnail';
+    const first = await app.inject({ url, headers: host });
+    expect(first.statusCode).toBe(200);
+    expect(imageSize(first.rawPayload)).toMatchObject({ width: 512, height: 256 });
+    const cached = await app.inject({ url, headers: host });
+    expect(cached.rawPayload).toEqual(first.rawPayload);
+    await sharp({ create: { width: 800, height: 1600, channels: 3, background: '#9b5713' } }).png().toFile(file);
+    const replaced = await app.inject({ url, headers: { ...host, 'if-none-match': first.headers.etag! } });
+    expect(replaced.statusCode).toBe(200);
+    expect(replaced.headers.etag).not.toBe(first.headers.etag);
+    expect(imageSize(replaced.rawPayload)).toMatchObject({ width: 256, height: 512 });
+    await writeFile(file, 'corrupt image');
+    expect((await app.inject({ url, headers: host })).statusCode).toBe(404);
+    expect((await app.inject({ url: '/api/catalog', headers: host })).json().collections).toHaveLength(1);
+});
+
+it('rejects redirected experiment ancestors even when the thumbnail is cached', async () => {
+    const { app, root } = await setup();
+    const url = '/api/media/mini/task/source/baseline/stable-A/original';
+    const thumbnail = await app.inject({ url: `${url}?variant=thumbnail`, headers: host });
+    expect(thumbnail.statusCode).toBe(200);
+    const outside = await mkdtemp(path.join(os.tmpdir(), 't2i-external-'));
+    roots.push(outside);
+    const tasks = path.join(root, 'mini/tasks');
+    await cp(tasks, path.join(outside, 'tasks'), { recursive: true });
+    await rename(tasks, path.join(root, 'mini/.saved-tasks'));
+    await symlink(path.join(outside, 'tasks'), tasks);
+    expect((await app.inject({ url, headers: host })).statusCode).toBe(404);
+    expect((await app.inject({ url: `${url}?variant=thumbnail`, headers: { ...host, 'if-none-match': thumbnail.headers.etag! } })).statusCode).toBe(404);
 });
