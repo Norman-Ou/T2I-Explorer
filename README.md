@@ -12,6 +12,8 @@ pnpm start
 
 打开 http://localhost:4173/ 。默认数据根目录 `data/datasets`，可用 `T2I_DATA_ROOT` 设置。演示数据：`T2I_DATA_ROOT=fixtures/datasets pnpm start`。
 
+需要后台运行并通过域名访问时，使用仓库内的 [start-t2i-explorer skill](.agents/skills/start-t2i-explorer/SKILL.md)：`使用 $start-t2i-explorer 启动项目`。默认通过已有 Cloudflare Tunnel 代理到 **https://dive.ouruizhe.top**，包括构建、systemd 用户服务、域名路由和健康检查；可显式指定其他域名、端口或数据目录。需要本机已有命名 tunnel 及凭据。
+
 数据包仅接受新格式，没有旧格式或旧 API 的兼容层：
 
 ```text
