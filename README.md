@@ -20,6 +20,12 @@ absolute or repository-relative directory to publish data without changing this 
 For a synthetic example, run `T2I_DATA_ROOT=fixtures/datasets pnpm start`. This fixture has no
 real GeoBanana data. Newly published manifests are discovered on the next request or with Reload.
 
+Baseline validation exports use the `baseline_validation_prediction` review stage
+and five ordered panels: original image, pred_overlay, gt_overlay, pred_mask,
+gt_mask. Existing three-panel training/source reviews remain supported. Raw
+prediction and GT assets, exact output text and evaluation provenance stay in the
+record; a preview is not a training acceptance or an aggregate result.
+
 ## v2 data contract
 
 ```text

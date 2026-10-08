@@ -15,6 +15,25 @@ async function miniRoot(records: unknown[], count = records.length, stage = "acc
 }
 const host = { host: "127.0.0.1" };
 describe("v2 API", () => {
+  it("serves five-panel baseline validation predictions with their exact output text", async () => {
+    const row = {sample_index:1,source_sample_id:"validation-1",review_stage:"baseline_validation_prediction",message_input_text:"Segment the ship",message_output_text:"",source_annotation_text:"GT ship",source_dataset:"SIOR_T",source_split:"valid",source_manifest_path:null,panel_roles:["original image","pred_overlay","gt_overlay","pred_mask","gt_mask"],asset_paths:{},evidence:{num_timesteps:50}};
+    const root = await miniRoot([row],1,"baseline_validation_prediction");
+    await copyFile(path.join(fixtureRoot,"sft-e6.0-r30/refseg/sior-t/sample-1.png"),path.join(root,"mini/model/source/sample-1.png"));
+    const instance = await app(root);
+    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
+    expect(response.statusCode).toBe(200);
+    const body = response.json<DatasetResponse>();
+    expect(body.records[0]?.panel_roles).toEqual(["original image","pred_overlay","gt_overlay","pred_mask","gt_mask"]);
+    expect(body.records[0]?.message_output_text).toBe("");
+    expect(body.images["1"]?.status).toBe("available");
+  });
+  it("rejects incomplete four-panel records while retaining three-panel compatibility", async () => {
+    const row = {sample_index:1,source_sample_id:"x",review_stage:"accepted_e6_sft_row",message_input_text:"x",message_output_text:"",source_annotation_text:null,source_dataset:"x",source_split:"train",source_manifest_path:null,panel_roles:["original","pred_overlay","gt_overlay","pred_mask"],asset_paths:{},evidence:{}};
+    const instance = await app(await miniRoot([row]));
+    const response = await instance.inject({url:"/api/v2/datasets/mini/model/source",headers:host});
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("RECORD_INVALID");
+  });
   it("discovers independent datasets, including an empty root", async () => {
     const empty = await app(await mkdtemp(path.join(os.tmpdir(),"t2i-empty-")));
     expect((await empty.inject({url:"/api/v2/catalog",headers:host})).json<CatalogResponse>().datasets).toEqual([]);
