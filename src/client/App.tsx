@@ -15,7 +15,7 @@ function ImageCell({ descriptor, record, onOpen }: { descriptor?: ImageDescripto
   const [failed, setFailed] = useState(false);
   if (!descriptor || descriptor.status === "missing") return <div className="image-state warning"><strong>Review image unavailable</strong><span>{descriptor?.file_name ?? `sample-${record.sample_index}.png`}</span></div>;
   if (descriptor.status === "invalid" || failed) return <div className="image-state error"><strong>Image cannot be decoded</strong><span>{descriptor.file_name}</span></div>;
-  return <button className="image-button" onClick={(event) => onOpen(event.currentTarget)} aria-label={`Open ${record.panel_roles.length}-panel review for ${record.source_sample_id}`}>
+  return <button className="image-button" onClick={(event) => onOpen(event.currentTarget)} aria-label={`Open ${record.panel_roles.length === 3 ? "three" : "five"}-panel review for ${record.source_sample_id}`}>
     <img src={descriptor.url} alt={`${record.panel_roles.join(", ")} review for ${record.source_sample_id}`} width={descriptor.width} height={descriptor.height} loading="lazy" decoding="async" onError={() => setFailed(true)} />
     {descriptor.status === "ambiguous" ? <span className="image-warning">Multiple files; showing {descriptor.file_name}</span> : null}
   </button>;
