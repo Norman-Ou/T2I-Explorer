@@ -1,20 +1,28 @@
-import { describe, expect, it } from "vitest";
-import { alignRows, filterRows, orderRows } from "../src/shared/order.js";
-import type { DatasetResponse, RecordV2 } from "../src/shared/contracts.js";
-const record = (sample_index: number, source_sample_id: string): RecordV2 => ({ sample_index, source_sample_id, review_stage: "accepted_e6_sft_row", message_input_text: "<SEG> target", message_output_text: "", source_annotation_text: null, source_dataset: "SIOR_T", source_split: "train", source_manifest_path: null, panel_roles: ["original","input_aux","output"], asset_paths: {}, evidence: {} });
-const data = (records: RecordV2[]): DatasetResponse => ({ dataset_id: "sft-e6.0-r30", model_id: "refseg", step_id: "sior-t", snapshot_id: "x", records, images: {}, diagnostics: [] });
-describe("ordinal alignment", () => {
-  it("aligns by ordinal and keeps duplicate column instances distinct", () => {
-    const rows = alignRows([{ key: "a", data: data([record(1,"source-A")]) },{ key: "b", data: data([record(1,"source-B"),record(2,"source-C")]) }]);
-    expect(rows.map((row) => row.sampleIndex)).toEqual([1,2]);
-    expect(rows[0]?.records.get("a")?.source_sample_id).toBe("source-A");
-    expect(rows[0]?.records.get("b")?.source_sample_id).toBe("source-B");
-    expect(rows[1]?.records.has("a")).toBe(false);
-  });
-  it("searches exact text and source IDs and shuffles deterministically", () => {
-    const rows = alignRows([{ key: "a", data: data([record(1,"source-A"),record(2,"source-B")]) }]);
-    expect(filterRows(rows,"<SEG>")).toHaveLength(2);
-    expect(filterRows(rows,"source-B").map((row) => row.sampleIndex)).toEqual([2]);
-    expect(orderRows(rows,"shuffle",42)).toEqual(orderRows(rows,"shuffle",42));
-  });
+import { expect, it } from 'vitest';
+import { alignRows, filterRows, orderRows, type LoadedColumn } from '../src/shared/order.js';
+import type { SampleView } from '../src/shared/contracts.js';
+function sample(sample_id: string, index: number): SampleView { return { sample_id, index, input_text: 'Input ' + sample_id, pred_text: '', gt_text: null, panels: [], metadata: {} }; }
+function column(key: string, exp: string, ids: string[], dataset = 'source', expOrder = 0): LoadedColumn { return { key, expOrder, data: { collection_id: 'collection', task_id: 'task', dataset_id: dataset, exp_id: exp, snapshot_id: 's', records: ids.map((id, i) => sample(id, i + 1)), diagnostics: [] } }; }
+it('aligns stable IDs with baseline anchor, gaps and new samples, independent of drag order', () => {
+    const baseline = column('b', 'baseline', ['A', 'B', 'C']), candidate = column('c', 'candidate', ['C', 'A', 'D'], 'source', 1);
+    const rows = alignRows([candidate, baseline]);
+    expect(rows.map(r => [r.records.get('b')?.sample_id, r.records.get('c')?.sample_id])).toEqual([['A', 'A'], ['B', undefined], ['C', 'C'], [undefined, 'D']]);
+    expect(alignRows([baseline, candidate]).map(r => [...r.records].sort())).toEqual(rows.map(r => [...r.records].sort()));
+});
+it('uses manifest order when baseline is absent and keeps distinct cohorts ordinal', () => {
+    const first = column('a', 'first', ['A', 'B'], 'source', 0), second = column('b', 'second', ['B', 'A'], 'source', 1), other = column('o', 'reference', ['X'], 'other');
+    const rows = alignRows([second, other, first]);
+    expect(rows[0]?.records.get('a')?.sample_id).toBe('A');
+    expect(rows[0]?.records.get('b')?.sample_id).toBe('A');
+    expect(rows[0]?.records.get('o')?.sample_id).toBe('X');
+    expect(rows[1]?.records.has('o')).toBe(false);
+});
+it('preserves duplicate columns and applies GT search and deterministic shuffle after alignment', () => {
+    const a = column('a', 'baseline', ['A', 'B', 'C']), b = { ...a, key: 'duplicate' };
+    a.data!.records[1]!.gt_text = 'unique target';
+    const rows = alignRows([a, b]);
+    expect(rows[0]?.records.size).toBe(2);
+    expect(filterRows(rows, 'unique target')).toHaveLength(1);
+    expect(orderRows(rows, 'shuffle', 10)).toEqual(orderRows(rows, 'shuffle', 10));
+    expect(orderRows(rows, 'id', 0).map(r => r.sampleIndex)).toEqual([1, 2, 3]);
 });

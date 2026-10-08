@@ -1,0 +1,52 @@
+{
+  "schema_version": 3,
+  "id": "sft-e6.0-r30",
+  "title": "sft-e6.0-r30",
+  "tasks": [
+    {
+      "id": "refseg",
+      "title": "RefSeg",
+      "datasets": [
+        {
+          "id": "sior-t",
+          "title": "SIOR_T",
+          "data_origin": "native",
+          "exps": [
+            {
+              "id": "baseline"
+            },
+            {
+              "id": "candidate"
+            }
+          ]
+        },
+        {
+          "id": "fast-t",
+          "title": "FAST_T",
+          "data_origin": "derived",
+          "exps": [
+            {
+              "id": "baseline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gcg",
+      "title": "GCG",
+      "datasets": [
+        {
+          "id": "preview",
+          "title": "Preview",
+          "data_origin": "native",
+          "exps": [
+            {
+              "id": "baseline"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

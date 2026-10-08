@@ -1,0 +1,23 @@
+{
+  "schema_version": 3,
+  "id": "basemodel-task-r30",
+  "title": "basemodel-task-r30",
+  "tasks": [
+    {
+      "id": "refseg",
+      "title": "RefSeg",
+      "datasets": [
+        {
+          "id": "official",
+          "title": "Official",
+          "data_origin": "native",
+          "exps": [
+            {
+              "id": "reference"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
