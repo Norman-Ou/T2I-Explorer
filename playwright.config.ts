@@ -21,7 +21,9 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    // Firefox can leave goto pending after a fully loaded page (microsoft/playwright#42183).
+    // Keep local runs strict; CI gets one retry and retains the failing attempt's trace.
+    { name: "firefox", retries: process.env.CI ? 1 : 0, use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } }
   ]
 });
