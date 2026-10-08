@@ -56,7 +56,7 @@ description: Use when the user asks to start, restart, or restore access to T2I 
      service: http://127.0.0.1:4173
    ```
 
-   保留末尾的原 catch-all（通常为 `- service: http_status:404`）。自定义端口时同步修改 origin 和服务 PORT。配置和凭据留在 `$HOME/.cloudflared`，不提交到 Git。验证规则命中目标 origin：
+   保留末尾的原 catch-all（通常为 `- service: http_status:404`）。自定义端口时同步修改 origin、服务 PORT，以及所有仍代理本应用的旧域名规则的 service；其他应用的规则保持原值。配置和凭据留在 `$HOME/.cloudflared`，不提交到 Git。验证规则命中目标 origin：
 
    ```bash
    cloudflared --config "$tunnel_config" tunnel ingress validate
