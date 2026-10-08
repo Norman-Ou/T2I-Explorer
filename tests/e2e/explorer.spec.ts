@@ -1,5 +1,18 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+test("long exact prompts stay inside a single comparison column", async ({ page }) => {
+  await page.route("**/api/v2/datasets/sft-e6.0-r30/refseg/sior-t", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.records[0].message_input_text = "Long validation prompt with categories and spatial relations. ".repeat(40);
+    await route.fulfill({json:body});
+  });
+  await page.goto("/?dataset=sft-e6.0-r30&cols=refseg:sior-t:wrap");
+  await expect(page.getByText("fixture-sior-t-1")).toBeVisible();
+  const grid = await page.locator(".comparison-grid").boundingBox();
+  const viewport = await page.locator(".comparison-scroll").boundingBox();
+  expect(grid!.width).toBeLessThanOrEqual(viewport!.width + 2);
+});
 test("landing discovers datasets and restores duplicate named-step columns", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading",{name:"Text-to-Image Explorer",exact:true}).last()).toBeVisible();
