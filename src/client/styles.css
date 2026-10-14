@@ -355,7 +355,6 @@ input::placeholder { color: var(--text-muted); opacity: 1; }
 .focused-panel { flex: 0 0 auto; height: 100%; width: max-content; margin-inline: auto; outline: none; }
 .expanded-media-panel { height: 100%; width: max-content; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 .expanded-media-panel .panel-frame { min-height: 0; }
-.expanded-media-panel .panel-button { width: 100%; height: 100%; min-width: 80px; aspect-ratio: auto; padding: 0; }
 .expanded-media-panel figcaption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .expanded-media-panel .panel-image { width: max-content; height: 100%; min-width: 80px; aspect-ratio: auto; }
 .lightbox-image-wrap .expanded-media-panel img { width: auto; height: 100%; max-width: none; max-height: none; }

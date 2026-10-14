@@ -78,10 +78,16 @@ test('single image fills the preview height, reuses originals and dismisses one 
     expect((await image.boundingBox())!.height).toBeGreaterThan(preview!.height * 0.8);
     expect(requests).toBe(before);
     await expect(dialog.locator('.details-panel')).toBeVisible();
-    await image.click();
+    const imagePoint = await image.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const aspectRatio = element.naturalWidth / element.naturalHeight;
+        const width = Math.min(bounds.width, bounds.height * aspectRatio);
+        const height = width / aspectRatio;
+        return { x: bounds.x + (bounds.width - width) / 2 + width / 2, y: bounds.y + (bounds.height - height) / 2 + height / 2 };
+    });
+    await page.mouse.click(imagePoint.x, imagePoint.y);
     await expect(focused).toBeVisible();
-    const imageBounds = await image.boundingBox();
-    await page.mouse.move(imageBounds!.x + imageBounds!.width / 2, imageBounds!.y + imageBounds!.height / 2);
+    await page.mouse.move(imagePoint.x, imagePoint.y);
     await page.mouse.down();
     await page.mouse.move(2, 2);
     await page.mouse.up();
