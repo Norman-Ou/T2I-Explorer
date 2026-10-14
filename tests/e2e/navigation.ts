@@ -1,6 +1,6 @@
 import { errors, type Page } from '@playwright/test';
 
-const baseURL = `http://127.0.0.1:${Number(process.env.T2I_E2E_PORT ?? 4180)}`;
+const baseURL = `http://127.0.0.1:${Number(process.env.T2I_E2E_PORT ?? 4182)}`;
 const options = { waitUntil: 'domcontentloaded' as const, timeout: 10_000 };
 
 async function navigate(page: Page, url: string, reload = false) {

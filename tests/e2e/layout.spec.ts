@@ -1,0 +1,142 @@
+import { expect, test } from '@playwright/test';
+import { openPage } from './navigation.js';
+
+const single = '/?dataset=sft-e6.0-r30&cols=refseg:sior-t:baseline:a';
+
+test('sidebar icons stay at the edges, restore width and report reload failure', async ({ page }) => {
+    await openPage(page, single);
+    const sidebar = page.locator('.sidebar');
+    const before = await sidebar.boundingBox();
+    const toggle = page.getByRole('button', { name: 'Hide navigation', exact: true });
+    const reload = page.getByRole('button', { name: 'Reload data', exact: true });
+    const button = await reload.boundingBox();
+    expect(button!.x - before!.x).toBe(16);
+    expect(before!.y + before!.height - button!.y - button!.height).toBe(12);
+    await toggle.click();
+    expect((await sidebar.boundingBox())!.width).toBe(44);
+    await expect(reload).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Show navigation', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Show navigation', exact: true }).click();
+    expect((await sidebar.boundingBox())!.width).toBe(before!.width);
+    let release = () => {};
+    await page.route('**/api/reload', async route => {
+        await new Promise<void>(resolve => { release = resolve; });
+        await route.fulfill({ status: 422, json: { error: { message: 'Reload failed for this test' } } });
+    });
+    await reload.click();
+    await expect(reload).toBeDisabled();
+    await expect(reload).toHaveAttribute('aria-busy', 'true');
+    release();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(reload).toBeEnabled();
+    await expect(reload).toHaveAttribute('aria-busy', 'false');
+});
+
+test('compact cards and cascading columns preserve parents and share comparison titles', async ({ page }) => {
+    await openPage(page, single);
+    const first = page.locator('.pair-card').first();
+    expect((await first.boundingBox())!.height).toBeLessThan(60);
+    await expect(page.locator('.selected-card .column-title strong')).toHaveText(await page.locator('.column-header .column-title strong').innerText());
+    await page.getByRole('button', { name: '展开 RefSeg 数据来源' }).click();
+    await page.getByRole('button', { name: '选择 SIOR_T', exact: true }).click();
+    const root = page.getByRole('list', { name: 'RefSeg 数据来源' });
+    const child = page.getByRole('list', { name: 'SIOR_T 实验' });
+    await expect(root).toBeVisible();
+    expect((await child.boundingBox())!.x).toBeGreaterThan((await root.boundingBox())!.x);
+    await page.getByRole('button', { name: '选择 FAST_T', exact: true }).click();
+    await expect(child).toHaveCount(0);
+    await expect(page.getByRole('list', { name: 'FAST_T 实验' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Add column', exact: true }).click();
+    await page.getByRole('button', { name: '选择 RefSeg', exact: true }).click();
+    await page.getByRole('button', { name: '选择 SIOR_T', exact: true }).click();
+    await expect(page.locator('.picker .selection-column')).toHaveCount(3);
+    await expect(page.getByRole('button', { name: '选择 GCG', exact: true })).toBeAttached();
+    await page.getByRole('button', { name: '添加 RefSeg · SIOR_T · Candidate' }).click();
+    await expect(page.locator('.column-header')).toHaveCount(2);
+    await expect(page.locator('.selected-card .column-title strong').last()).toHaveText(await page.locator('.column-header .column-title strong').last().innerText());
+});
+
+test('single image fills the preview height, reuses originals and dismisses one level at a time', async ({ page }) => {
+    let requests = 0;
+    page.on('request', request => { if (request.url().includes('/api/media/') && !request.url().includes('variant=thumbnail')) requests++; });
+    await openPage(page, single);
+    const trigger = page.locator('.record-cell').first().locator('.panel-button').first();
+    await trigger.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('.media-panel[data-media-state="ready"]')).toHaveCount(5);
+    const before = requests;
+    const zoomButton = dialog.getByRole('button', { name: 'Enlarge Original', exact: true });
+    await zoomButton.click();
+    const focused = dialog.getByRole('region', { name: 'Original enlarged image' });
+    const image = focused.locator('img');
+    await expect(image).toBeVisible();
+    const bounds = await focused.boundingBox();
+    const preview = await dialog.locator('.lightbox-image-wrap').boundingBox();
+    expect(Math.abs(bounds!.height - preview!.height + 32)).toBeLessThan(1);
+    expect((await image.boundingBox())!.height).toBeGreaterThan(preview!.height * 0.8);
+    expect(requests).toBe(before);
+    await expect(dialog.locator('.details-panel')).toBeVisible();
+    const imagePoint = await image.evaluate(element => {
+        const imageElement = element as HTMLImageElement;
+        const bounds = imageElement.getBoundingClientRect();
+        const aspectRatio = imageElement.naturalWidth / imageElement.naturalHeight;
+        const width = Math.min(bounds.width, bounds.height * aspectRatio);
+        const height = width / aspectRatio;
+        return { x: bounds.x + (bounds.width - width) / 2 + width / 2, y: bounds.y + (bounds.height - height) / 2 + height / 2 };
+    });
+    await page.mouse.click(imagePoint.x, imagePoint.y);
+    await expect(focused).toBeVisible();
+    await page.mouse.move(imagePoint.x, imagePoint.y);
+    await page.mouse.down();
+    await page.mouse.move(2, 2);
+    await page.mouse.up();
+    await expect(focused).toBeVisible();
+    await dialog.locator('.record-identity').click();
+    await expect(focused).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(zoomButton).toBeFocused();
+    await zoomButton.click();
+    await page.mouse.click(2, 2);
+    await expect(focused).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await zoomButton.click();
+    await page.keyboard.press('Escape');
+    await expect(focused).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await expect(trigger).toBeFocused();
+});
+
+test('wide single images scroll inside the preview without covering details', async ({ page }) => {
+    const imageUrl = '**/api/media/sft-e6.0-r30/refseg/sior-t/baseline/fixture-A/original_image';
+    await page.route(imageUrl, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="200"><rect width="2000" height="200" fill="steelblue"/></svg>' }));
+    await openPage(page, single);
+    await page.locator('.record-cell').first().locator('.panel-button').first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Enlarge Original', exact: true }).click();
+    const layer = dialog.locator('.focused-image-layer');
+    await expect(dialog.locator('.focused-panel img')).toBeVisible();
+    await expect.poll(() => layer.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+    const bounds = await layer.boundingBox();
+    const details = await dialog.locator('.details-panel').boundingBox();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(details!.x + 1);
+    await expect(dialog.locator('.details-panel')).toBeVisible();
+});
+
+test('narrow cascading menus and sidebar controls do not widen the page', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, single);
+    await page.getByRole('button', { name: '展开 RefSeg 数据来源' }).click();
+    await page.getByRole('button', { name: '选择 SIOR_T', exact: true }).click();
+    await expect(page.locator('.task-card.expanded .selection-column')).toHaveCount(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.getByRole('button', { name: 'Hide navigation', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Show navigation', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reload data', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Show navigation', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Dataset', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

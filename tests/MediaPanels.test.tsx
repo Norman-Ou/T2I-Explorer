@@ -24,6 +24,17 @@ it('renders all modal panels without nested open controls and handles decode err
     expect(screen.getByRole('button', { name: 'Retry Original' })).toBeInTheDocument();
 });
 
+it('opens a single detail panel while continuing to load the original', async () => {
+    const zoom = vi.fn();
+    render(<MediaPanels record={record} onZoom={zoom}/>);
+    await screen.findByRole('img');
+    const button = screen.getByRole('button', { name: 'Enlarge Original' });
+    fireEvent.click(button);
+    expect(zoom).toHaveBeenCalledWith(record.panels[0], button);
+    expect(fetch).toHaveBeenCalledWith('/original.png', expect.anything());
+    expect(screen.queryByRole('button', { name: 'Enlarge Mask' })).toBeNull();
+});
+
 it('fetches thumbnails in comparison cells and originals in the detail view', async () => {
     const preview = render(<MediaPanels record={record} onOpen={vi.fn()}/>);
     await screen.findByRole('img');

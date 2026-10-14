@@ -1,5 +1,8 @@
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import type { SampleView } from "../shared/contracts.js";
+export type TextDisplay = { expanded: boolean; generation: number };
+const defaultTextDisplay: TextDisplay = { expanded: true, generation: 0 };
 export function ColoredText({ value }: {
     value: string | null | undefined;
 }) {
@@ -27,8 +30,20 @@ export function ColoredText({ value }: {
     parts.push(value.slice(cursor));
     return <>{parts}</>;
 }
-export function SampleText({ record }: {
+function TextField({ label, value, defaultExpanded }: { label: string; value: string | null; defaultExpanded: boolean }) {
+    const [expanded, setExpanded] = useState(defaultExpanded);
+    const id = useId();
+    return <section className="sample-text-field">
+        <h2 aria-label={label}><button type="button" className="text-toggle" aria-expanded={expanded} aria-controls={id}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`} onClick={() => setExpanded(current => !current)}>
+            <ChevronRight size={16} aria-hidden="true"/><span>{label}</span>
+        </button></h2>
+        <p id={id} className="exact-text" hidden={!expanded}><ColoredText value={value}/></p>
+    </section>;
+}
+export function SampleText({ record, textDisplay = defaultTextDisplay }: {
     record: SampleView;
+    textDisplay?: TextDisplay;
 }) {
     const fields: Array<[
         string,
@@ -42,7 +57,5 @@ export function SampleText({ record }: {
             string | null
         ])
     ];
-    return <>{fields.map(([label, value], index) => <section key={`${label}-${index}`}>
-    <h2>{label}</h2><p className="exact-text"><ColoredText value={value}/></p>
-  </section>)}</>;
+    return <>{fields.map(([label, value], index) => <TextField key={`${record.sample_id}-${label}-${index}-${textDisplay.generation}`} label={label} value={value} defaultExpanded={textDisplay.expanded}/>)}</>;
 }

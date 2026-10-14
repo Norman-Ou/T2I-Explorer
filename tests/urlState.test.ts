@@ -9,6 +9,9 @@ it('roundtrips duplicate stream instances, mode, search and active stable sample
     const state = parseViewState('?dataset=sft-e6.0-r30&mode=exp&cols=t:d:e:a,t:d:e:b&active=t:d:e:b:sample-X&q=airplane&order=shuffle&seed=78&page=2&pageSize=10');
     expect(parseViewState(serializeViewState(state))).toEqual(state);
     expect(state.columns).toHaveLength(2);
+    expect(serializeViewState(state)).not.toMatch(/order=|seed=/);
+    expect(state).not.toHaveProperty('order');
+    expect(state).not.toHaveProperty('seed');
 });
 it('rejects old column URLs, unsafe tuples and malformed pagination', () => {
     const state = parseViewState('?dataset=../secret&cols=t:d:old,t:d:e:ok,t:d:e:ok&active=t:d:old:1&page=-1&seed=-2&pageSize=30');

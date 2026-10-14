@@ -41,6 +41,8 @@
 
 sample_id 是逻辑样本身份，在同任务、来源的所有实验中稳定复用。index 仅定义实验内顺序，不代替跨实验身份。不得按同名原图或相同 index 推断身份。输入、预测、GT 均必填，可以为 null，空字符串保持独立含义。额外文本不替换这三项；不从来源标注或参考输出猜测 GT 或预测。
 
+原始数据集的记录 ID 可放在 `metadata.source_id`，划分可放在 `metadata.source_split`。显示 Source ID 时按 `metadata`、`metadata.evidence`、`metadata.original_record`、`metadata.original_record.evidence` 的顺序读取首个有效 `source_id`，兼容已发布包保留证据的位置；未提供时显示 `sample_id` 并标记为 Sample ID。原始 ID 用于显示和搜索，不代替逻辑样本身份；同一来源记录可能生成多条任务请求。
+
 panel 顺序完全由数组决定，支持 1–32 个独立面板。每个 panel ID 在样本内唯一；asset 是该实验内 `assets/` 下的相对路径，不允许绝对路径、`..`、符号链接或未声明资源。缺少资源必须使用显式 null 和非空原因；声明有资源但找不到、格式错误的包拒绝发布。
 
 ID 匹配 `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`。JSON 单文件配置和单行样本各不超过 1 MiB，samples.jsonl 不超过 100 MiB，单实验最多 100000 样本，单样本 JSON 最多 50000 节点、嵌套深度 100；单图最多 50 MiB，校验后缀、签名、尺寸。Schema：[collection](schemas/collection.schema.json)、[experiment](schemas/experiment.schema.json)、[sample](schemas/sample.schema.json)。
@@ -63,13 +65,13 @@ catalog/records 使用元数据快照 ETag；自动刷新在后台检查元数�
 
 ## 浏览和比较
 
-首页数据集卡片只有 collection title。应用标题靠左，无数据集副标题；右侧为 Reload data、Copy link、侧栏按钮。任务名称首字母大写，GCG/VGD 全大写、Relative Height 分词。任务卡片只显示名称和展开按钮，无进度或执行状态。来源图标按声明的原生/衍生分类显示。
+首页数据集卡片只有 collection title，高度随内容撑开，上下内边距 12px。首页标题、圆角搜索框、数量摘要及卡片区左边对齐。数据集名称和 ID 支持模糊搜索：忽略大小写、空白和分隔符，按输入字符顺序匹配不连续片段。应用名称为 DiVE，浏览器标题与名称栏一致，favicon 为白底黑字 SVG（同时提供 16/32/48px ICO）。点击顶部 DiVE 名称回到首页，清空当前数据集、对比列及样本搜索，支持浏览器前进／后退。顶部名称栏只显示 DiVE，不含操作按钮；侧栏顶部左侧使用箭头收起／展开，底部左侧使用 SVG 图标 Reload data。桌面收起后保留 44px 窄栏和两个图标，展开时恢复已保存宽度；侧栏中间控制区独立滚动。任务名称首字母大写，GCG/VGD 全大写、Relative Height 分词。任务卡片只显示名称和展开按钮，高度随内容撑开，上下内边距 8px。来源图标按声明的原生/衍生分类显示。
 
-侧栏从上到下为 Dataset、View by（Task/Exp）、Search examples。Task 模式选择顺序 task → dataset → exp；Exp 模式 exp → task → dataset，只列实际存在的实验。切换模式保留列和浏览状态。同一实验允许多个独立列实例，列可排序、删除，卡片下拉在选择、点击外部和 Escape 时关闭。
+侧栏从上到下为 Dataset、View by（Task/Exp）、Search examples、已选列、Page size。已选列与对比列头使用同一单行标题：任务-数据来源-实验；超长省略并提供完整标题提示。Task 模式选择顺序 task → dataset → exp；Exp 模式 exp → task → dataset，只列实际存在的实验。卡片下拉和侧栏添加列均使用级联菜单，每层向右展开并保留之前的层级；切换父项替换右侧分支，最终选择才添加列。各列独立纵向滚动，空间不足时菜单内部横向滚动。切换模式保留列和浏览状态。同一实验允许多个独立列实例，列可排序、删除，菜单在选择、点击外部和 Escape 时关闭。
 
-同一 collection/task/dataset 的多个实验按 sample_id 联合对齐。优先用已选 Baseline 的 index 排序；无 Baseline 时，以已选实验在 collection 中的声明顺序为锚点。缺失样本显式留空，新增样本在锚点样本后追加。不同 cohort 按各自排好后的行序并排，不跨来源对齐身份。过滤、分页、确定性 shuffle 在对齐之后执行；拖动列不改变行顺序，不显示单独 index 列。
+同一 collection/task/dataset 的多个实验按 sample_id 联合对齐。优先用已选 Baseline 的 index 排序；无 Baseline 时，以已选实验在 collection 中的声明顺序为锚点。缺失样本显式留空，新增样本在锚点样本后追加。不同 cohort 按各自排好后的行序并排，不跨来源对齐身份。对齐后的顺序固定，过滤和分页保留该顺序；拖动列不改变行顺序，不显示单独 index 列或排序控制。
 
-每个样本的 panels 保持一行、等宽、全部可见，缺图占据自己的位置，长文本在列内折行。点击任意缩略图打开整组，不跳到单图。弹窗显示全组和完整文本/JSON，只有浮动 Close；点击背景、Close 和 Escape 关闭并恢复焦点，内部点击和拖动到外部不关闭。手机上 panels 仍然横排，详情可向下滚动。
+每个样本的 panels 保持一行、等宽、全部可见，缺图占据自己的位置，长文本在列内折行。点击任意缩略图打开整组和完整文本/JSON。点击大图预览区内的可用子图，在同一区域内将单图放大至预览区的可用高度，宽度按图片比例自适应；超宽图在预览区内横向滚动，记录详情保持可见。单图复用现有原图请求；缺图保持占位。弹窗没有 Close 按钮，点击单图外侧或 Escape 先恢复整组；再点击整组外侧背景或 Escape 关闭详情并恢复焦点。内部点击和从内部拖动到外部不关闭。手机上 panels 仍然横排，详情可向下滚动。单图状态仅在当前详情内保存，关闭或切换记录时清除。
 
 列表在面板接近可见区域 300px 时请求缩略图，最多 4 张并发，完成一张立即显示并补位；弹窗使用独立的 2 个原图请求名额，可先显示已有缩略图。缩略图单次请求超时 15 秒，原图 60 秒；网络错误、超时、429、5xx 最多自动重试 2 次，默认退避 0.5/1.5 秒并尊重 Retry-After。退避不占请求名额；404、解码失败不自动重试。失败图提供独立 Retry 按钮，显式缺图保持原因占位。无人使用的请求被取消，Blob URL 在最后一个使用者离开时释放。
 
@@ -79,4 +81,4 @@ Input/Pred/GT 均显示。合法 `<p>airplane-3<color>(254, 91, 109)</color></p>
 
 ## URL
 
-collection 导航保持 `?dataset=sft-e6.0-r30`。列为 `cols=task:dataset:exp:instance,...`；active 为 `task:dataset:exp:instance:sample_id`。不接受三段旧列格式，不将旧 active 中的数字序号转换为 sample_id。可持久化 mode、q、order、seed、page、pageSize，页面刷新和浏览器历史还原状态。无效或未发布的列移除，不转换为默认实验。
+collection 导航保持 `?dataset=sft-e6.0-r30`。列为 `cols=task:dataset:exp:instance,...`；active 为 `task:dataset:exp:instance:sample_id`。不接受三段旧列格式，不将旧 active 中的数字序号转换为 sample_id。可持久化 mode、q、page、pageSize，页面刷新和浏览器历史还原状态。旧链接的 order、seed 被忽略并从 URL 清除。无效或未发布的列移除，不转换为默认实验。
