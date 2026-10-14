@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { openPage } from './navigation.js';
 
 const single = '/?dataset=sft-e6.0-r30&cols=refseg:sior-t:baseline:a';
 
 test('sidebar icons stay at the edges, restore width and report reload failure', async ({ page }) => {
-    await page.goto(single);
+    await openPage(page, single);
     const sidebar = page.locator('.sidebar');
     const before = await sidebar.boundingBox();
     const toggle = page.getByRole('button', { name: 'Hide navigation', exact: true });
@@ -33,7 +34,7 @@ test('sidebar icons stay at the edges, restore width and report reload failure',
 });
 
 test('compact cards and cascading columns preserve parents and share comparison titles', async ({ page }) => {
-    await page.goto(single);
+    await openPage(page, single);
     const first = page.locator('.pair-card').first();
     expect((await first.boundingBox())!.height).toBeLessThan(60);
     await expect(page.locator('.selected-card .column-title strong')).toHaveText(await page.locator('.column-header .column-title strong').innerText());
@@ -60,7 +61,7 @@ test('compact cards and cascading columns preserve parents and share comparison 
 test('single image fills the preview height, reuses originals and dismisses one level at a time', async ({ page }) => {
     let requests = 0;
     page.on('request', request => { if (request.url().includes('/api/media/') && !request.url().includes('variant=thumbnail')) requests++; });
-    await page.goto(single);
+    await openPage(page, single);
     const trigger = page.locator('.record-cell').first().locator('.panel-button').first();
     await trigger.click();
     const dialog = page.getByRole('dialog');
@@ -105,7 +106,7 @@ test('single image fills the preview height, reuses originals and dismisses one 
 test('wide single images scroll inside the preview without covering details', async ({ page }) => {
     const imageUrl = '**/api/media/sft-e6.0-r30/refseg/sior-t/baseline/fixture-A/original_image';
     await page.route(imageUrl, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="200"><rect width="2000" height="200" fill="steelblue"/></svg>' }));
-    await page.goto(single);
+    await openPage(page, single);
     await page.locator('.record-cell').first().locator('.panel-button').first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'Enlarge Original', exact: true }).click();
@@ -120,7 +121,7 @@ test('wide single images scroll inside the preview without covering details', as
 
 test('narrow cascading menus and sidebar controls do not widen the page', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(single);
+    await openPage(page, single);
     await page.getByRole('button', { name: '展开 RefSeg 数据来源' }).click();
     await page.getByRole('button', { name: '选择 SIOR_T', exact: true }).click();
     await expect(page.locator('.task-card.expanded .selection-column')).toHaveCount(2);
