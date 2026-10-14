@@ -1,14 +1,5 @@
 import type { ExperimentResponse, SampleView } from "./contracts.js";
-export function rowHash(input: string): number {
-    let h = 1779033703 ^ input.length;
-    for (let i = 0; i < input.length; i += 1) {
-        h = Math.imul(h ^ input.charCodeAt(i), 3432918353);
-        h = (h << 13) | (h >>> 19);
-    }
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return (h ^ (h >>> 16)) >>> 0;
-}
+import { sampleIdentity } from './sampleIdentity.js';
 export type LoadedColumn = {
     key: string;
     expOrder?: number;
@@ -54,10 +45,8 @@ export function filterRows(rows: AlignedRow[], query: string, labels: string[] =
         return rows;
     if (labels.some((label) => label.toLowerCase().includes(needle)))
         return rows;
-    return rows.filter((row) => String(row.sampleIndex).includes(needle) || [...row.records.values()].some((record) => [record.sample_id, record.input_text, record.pred_text, record.gt_text, ...record.extra_texts?.map(item => item.text) ?? []].some((value) => value?.toLowerCase().includes(needle))));
-}
-export function orderRows(rows: AlignedRow[], order: "id" | "shuffle", seed: number): AlignedRow[] {
-    if (order === "id")
-        return [...rows].sort((a, b) => a.sampleIndex - b.sampleIndex);
-    return [...rows].sort((a, b) => rowHash(`t2i-explorer:3:${seed}:${a.sampleIndex}`) - rowHash(`t2i-explorer:3:${seed}:${b.sampleIndex}`) || a.sampleIndex - b.sampleIndex);
+    return rows.filter((row) => String(row.sampleIndex).includes(needle) || [...row.records.values()].some((record) => {
+        const identity = sampleIdentity(record);
+        return [identity.sourceId, identity.sourceSampleId, record.sample_id, record.input_text, record.pred_text, record.gt_text, ...record.extra_texts?.map(item => item.text) ?? []].some((value) => value?.toLowerCase().includes(needle));
+    }));
 }

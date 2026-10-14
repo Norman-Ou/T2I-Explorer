@@ -1,0 +1,15 @@
+<div id="component-toolbar">
+  <strong>Dev 组件标注</strong>
+  <label><input id="show-annotations" type="checkbox" checked>显示标注</label>
+  <select id="annotation-level" aria-label="标注层级">
+    <option value="components">组件名称</option>
+    <option value="all" selected>所有组件（含按钮）</option>
+    <option value="regions">主要区域</option>
+  </select>
+  <button id="legend-toggle" aria-expanded="false" aria-controls="component-legend">组件目录</button>
+  <span id="component-status" role="status">正在加载页面…</span>
+  <a href="__UPSTREAM__/?dataset=sft-e6.0-r30" target="_blank" rel="noopener">打开 Prob 原页面 ↗</a>
+</div>
+<div id="root"></div>
+<div id="component-overlay" aria-hidden="true"></div>
+<aside id="component-legend" aria-label="组件名称目录" hidden></aside>

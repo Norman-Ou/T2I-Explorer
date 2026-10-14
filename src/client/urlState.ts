@@ -4,8 +4,6 @@ export type ViewState = {
     mode: ViewMode;
     columns: string[];
     query: string;
-    order: "id" | "shuffle";
-    seed: number;
     page: number;
     pageSize: 10 | 25 | 50 | 100;
     active?: string;
@@ -31,15 +29,13 @@ export function activeParts(value?: string) {
 export function parseViewState(search: string): ViewState {
     const params = new URLSearchParams(search);
     const columns = [...new Set((params.get("cols") ?? "").split(",").filter(value => tupleParts(value)))];
-    const rawSeed = Number(params.get("seed"));
     const rawPage = Number(params.get("page"));
     const rawSize = Number(params.get("pageSize"));
     const datasetId = params.get("dataset") ?? undefined;
     const rawActive = params.get("active") ?? undefined;
     return {
         ...(datasetId && id.test(datasetId) ? { datasetId } : {}), mode: params.get("mode") === "exp" ? "exp" : "task",
-        columns, query: params.get("q") ?? "", order: params.get("order") === "shuffle" ? "shuffle" : "id",
-        seed: Number.isInteger(rawSeed) && rawSeed >= 0 && rawSeed <= 0xffffffff ? rawSeed : 0,
+        columns, query: params.get("q") ?? "",
         page: Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1,
         pageSize: (pageSizes.has(rawSize) ? rawSize : 25) as ViewState["pageSize"],
         ...(rawActive && activeParts(rawActive) ? { active: rawActive } : {})
@@ -55,10 +51,6 @@ export function serializeViewState(state: ViewState): string {
         params.set("cols", state.columns.join(","));
     if (state.query)
         params.set("q", state.query);
-    if (state.order === "shuffle") {
-        params.set("order", "shuffle");
-        params.set("seed", String(state.seed >>> 0));
-    }
     if (state.page !== 1)
         params.set("page", String(state.page));
     if (state.pageSize !== 25)

@@ -2,7 +2,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { DataOrigin } from "../shared/contracts.js";
-import { SourceOriginBadge } from "./SourceOriginBadge.js";
+import { ColumnTitle } from "./ColumnTitle.js";
 export function SortableColumnHeader({ id, label, sourceTitle, expTitle, origin, index, total, onMove, onRemove, onRetry, status, error }: {
     id: string;
     label: string;
@@ -20,11 +20,10 @@ export function SortableColumnHeader({ id, label, sourceTitle, expTitle, origin,
     const sortable = useSortable({ id });
     return <div ref={sortable.setNodeRef} className="column-header" style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}>
     <button className="drag-handle" aria-label={`Drag ${label}, ${sourceTitle}`} {...sortable.attributes} {...sortable.listeners}>⋮⋮</button>
-    <div><strong>{label}</strong><span className="source-label"><SourceOriginBadge origin={origin}/>{sourceTitle}</span>
-      <span className="experiment-label">{expTitle}</span>
+    <ColumnTitle task={label} source={sourceTitle} experiment={expTitle} origin={origin}>
       {status === "loading" ? <span className="column-status">Loading…</span> : null}
       {status === "error" ? <span className="column-status error" title={error}>Unavailable</span> : null}
-    </div>
+    </ColumnTitle>
     <div className="column-actions">
       {status === 'error' ? <button onClick={onRetry} aria-label={`Retry column ${index + 1}`}>Retry</button> : null}
       <button disabled={index === 0} onClick={() => onMove(-1)} aria-label={`Move column ${index + 1} left`}>←</button>
