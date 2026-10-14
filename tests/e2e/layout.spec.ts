@@ -79,8 +79,9 @@ test('single image fills the preview height, reuses originals and dismisses one 
     expect(requests).toBe(before);
     await expect(dialog.locator('.details-panel')).toBeVisible();
     const imagePoint = await image.evaluate(element => {
-        const bounds = element.getBoundingClientRect();
-        const aspectRatio = element.naturalWidth / element.naturalHeight;
+        const imageElement = element as HTMLImageElement;
+        const bounds = imageElement.getBoundingClientRect();
+        const aspectRatio = imageElement.naturalWidth / imageElement.naturalHeight;
         const width = Math.min(bounds.width, bounds.height * aspectRatio);
         const height = width / aspectRatio;
         return { x: bounds.x + (bounds.width - width) / 2 + width / 2, y: bounds.y + (bounds.height - height) / 2 + height / 2 };
