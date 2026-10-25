@@ -9,7 +9,7 @@ import { matchesDatasetSearch } from "./datasetSearch.js";
 import { api } from "./api.js";
 import { Lightbox } from "./Lightbox.js";
 import { SortableColumnHeader } from "./SortableColumnHeader.js";
-import { activeParts, parseViewState, serializeViewState, tupleParts, type ViewState } from "./urlState.js";
+import { activeParts, canonicalViewState, parseViewState, serializeViewState, tupleParts, type ViewState } from "./urlState.js";
 import { SampleText, type TextDisplay } from "./SampleText.js";
 import { TaskBrowser } from "./TaskBrowser.js";
 import { ColumnTitle } from "./ColumnTitle.js";
@@ -87,6 +87,12 @@ export function App() {
     useEffect(() => {
         if (!catalog)
             return;
+        const canonical = canonicalViewState(view, catalog.collections);
+        if (canonical !== view) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Preserve legacy links while normalizing collection identity.
+            updateView(canonical, true);
+            return;
+        }
         const selected = catalog.collections.find(item => item.id === view.datasetId);
         const filtered = view.columns.filter(key => {
             const tuple = tupleParts(key);
@@ -95,7 +101,6 @@ export function App() {
         const linkedCell = activeParts(view.active);
         const active = linkedCell && filtered.includes(linkedCell.key) ? view.active : undefined;
         if (filtered.length !== view.columns.length || Boolean(view.datasetId && !selected) || active !== view.active)
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile externally supplied URL state with the loaded catalog.
             updateView({ ...view, datasetId: selected?.id, columns: filtered, active, notice: "An unavailable dataset, experiment or record was removed from the link." }, true);
     }, [catalog, updateView, view]);
     useEffect(() => { const timer = window.setTimeout(() => { if (queryInput !== view.query)

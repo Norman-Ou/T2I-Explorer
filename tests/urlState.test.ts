@@ -21,3 +21,8 @@ it('rejects old column URLs, unsafe tuples and malformed pagination', () => {
     expect(state.page).toBe(1);
     expect(state.pageSize).toBe(25);
 });
+it('normalizes a read-only collection alias while preserving the complete linked view', async () => {
+    const { canonicalViewState } = await import('../src/client/urlState.js');
+    const state = parseViewState('?dataset=sft-e6.1-r30&mode=exp&cols=t:d:e:a&active=t:d:e:a:sample-X&q=bridge&page=2&pageSize=10');
+    expect(canonicalViewState(state, [{ id: 'sft-e6-r30', aliases: ['sft-e6.1-r30'] }])).toEqual({ ...state, datasetId: 'sft-e6-r30' });
+});

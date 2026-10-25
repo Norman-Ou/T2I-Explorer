@@ -6,6 +6,7 @@ import type { CatalogResponse, Diagnostic, ExperimentResponse, SampleView } from
 import { loadCollection, safeFile, requireId, experimentKey, type LoadedCollection } from './dataFormat.js';
 export class CatalogStore {
     private entries = new Map<string, LoadedCollection>();
+    private aliases = new Map<string, string>();
     private diagnostics: Diagnostic[] = [];
     private snapshot = 'empty';
     private signature = '';
@@ -82,6 +83,15 @@ export class CatalogStore {
                     diagnostics.push({ severity: 'error', code: 'COLLECTION_INVALID', message: 'Collection failed package validation. Run the data CLI to inspect it.', collection_id: dir.name });
                 }
             }
+            const aliases = new Map<string, string>();
+            for (const [id, entry] of entries) {
+                for (const alias of entry.manifest.aliases ?? []) {
+                    if (entries.has(alias) || aliases.has(alias))
+                        throw new Error('Collection alias conflicts with another identity');
+                    aliases.set(alias, id);
+                }
+            }
+            this.aliases = aliases;
             this.entries = entries;
             this.refreshError = undefined;
             this.diagnostics = diagnostics;
@@ -97,14 +107,17 @@ export class CatalogStore {
         return this.catalog();
     }
     catalog(): CatalogResponse { return { snapshot_id: this.snapshot, collections: [...this.entries.values()].map(e => e.collection), diagnostics: [...this.diagnostics, ...(this.refreshError ? [this.refreshError] : [])] }; }
+    private canonical(id: string) { requireId(id); return this.aliases.get(id) ?? id; }
     private experiment(collection: string, task: string, dataset: string, exp: string) {
         [collection, task, dataset, exp].forEach(requireId);
+        collection = this.canonical(collection);
         const entry = this.entries.get(collection), loaded = entry?.experiments.get(experimentKey(task, dataset, exp));
         if (!entry || !loaded)
             throw new Error('Declared experiment is unavailable');
         return { entry, loaded };
     }
     async getExperiment(collection: string, task: string, dataset: string, exp: string): Promise<ExperimentResponse> {
+        collection = this.canonical(collection);
         const { entry, loaded } = this.experiment(collection, task, dataset, exp);
         const records: SampleView[] = loaded.records.map(record => ({ ...record, panels: record.panels.map(panel => {
                 const descriptor = loaded.panels.get(`${record.sample_id}:${panel.id}`)?.descriptor;
@@ -115,6 +128,7 @@ export class CatalogStore {
     }
     async getPanel(collection: string, task: string, dataset: string, exp: string, sample: string, panel: string) {
         [sample, panel].forEach(requireId);
+        collection = this.canonical(collection);
         const { loaded } = this.experiment(collection, task, dataset, exp);
         const declared = loaded.records.find(r => r.sample_id === sample)?.panels.find(p => p.id === panel);
         if (!declared?.asset)

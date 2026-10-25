@@ -125,7 +125,7 @@ export async function loadCollection(root: string, options: { validateAssets?: b
         throw new Error(`Invalid collection: ${ajv.errorsText(validateCollection.errors)}`);
     unique(manifest.tasks.map(t => t.id), 'task ID');
     const experiments = new Map<string, LoadedExperiment>();
-    const collection: Collection = { id: manifest.id, title: manifest.title, description: manifest.description, tasks: [] };
+    const collection: Collection = { id: manifest.id, title: manifest.title, description: manifest.description, aliases: manifest.aliases, tasks: [] };
     const hash = createHash('sha256').update(JSON.stringify(manifest));
     for (const task of manifest.tasks) {
         unique(task.datasets.map(d => d.id), 'dataset ID');

@@ -46,6 +46,18 @@ catch (error) {
         return false;
     throw error;
 } }
+async function assertWritableIdentity(root: string, id: string, aliases: string[] = []) {
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        const manifestPath = await safeFile(root, `${entry.name}/collection.json`);
+        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+        if (manifest.aliases?.includes(id))
+            throw new Error(`Collection '${id}' is a read-only alias; publish to '${manifest.id}'`);
+        if (entry.name !== id && aliases.some(alias => alias === manifest.id || manifest.aliases?.includes(alias)))
+            throw new Error('Collection alias conflicts with another identity');
+    }
+    if (aliases.includes(id)) throw new Error('Collection cannot alias itself');
+}
 async function publish(stage: string, root: string, id: string, replace: boolean) {
     const target = path.join(root, requireId(id));
     let backup: string | undefined;
@@ -84,7 +96,9 @@ export async function publishCollection(source: string, root: string, replace = 
     if (source === root || root.startsWith(source + path.sep))
         throw new Error('Destination cannot be inside source');
     return withLock(root, async () => {
-        const loaded = await loadCollection(source), before = await treeDigest(source), stage = path.join(root, `.staging-${randomUUID()}`);
+        const loaded = await loadCollection(source);
+        await assertWritableIdentity(root, loaded.manifest.id, loaded.manifest.aliases);
+        const before = await treeDigest(source), stage = path.join(root, `.staging-${randomUUID()}`);
         try {
             await cloneTree(source, stage);
             await loadCollection(stage);
@@ -103,6 +117,7 @@ export async function publishExperiment(source: string, root: string, collection
     if(source === root || root.startsWith(source + path.sep)) throw new Error('Destination cannot be inside source');
     [collectionId, taskId, datasetId].forEach(requireId);
     return withLock(root, async () => {
+        await assertWritableIdentity(root, collectionId);
         const currentRoot = await safeFile(root, collectionId), current = await loadCollection(currentRoot), incoming = await loadExperiment(source);
         const dataset = current.manifest.tasks.find(t => t.id === taskId)?.datasets.find(d => d.id === datasetId);
         if (!dataset)

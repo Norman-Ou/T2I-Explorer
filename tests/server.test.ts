@@ -136,3 +136,19 @@ it('rejects redirected experiment ancestors even when the thumbnail is cached', 
     expect((await app.inject({ url, headers: host })).statusCode).toBe(404);
     expect((await app.inject({ url: `${url}?variant=thumbnail`, headers: { ...host, 'if-none-match': thumbnail.headers.etag! } })).statusCode).toBe(404);
 });
+it('resolves old record and media URLs with one canonical catalog entry', async () => {
+    const { app, root } = await setup();
+    const manifestPath = path.join(root, 'mini/collection.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, aliases: ['old-mini'] }));
+    await app.inject({ url: '/api/reload', method: 'POST', headers: host });
+    const catalog = (await app.inject({ url: '/api/catalog', headers: host })).json();
+    expect(catalog.collections.map((item: {id: string}) => item.id)).toEqual(['mini']);
+    const records = await app.inject({ url: '/api/collections/old-mini/tasks/task/datasets/source/exps/baseline/records', headers: host });
+    expect(records.statusCode).toBe(200);
+    expect(records.json().collection_id).toBe('mini');
+    const canonical = await app.inject({ url: records.json().records[0].panels[0].url, headers: host });
+    const old = await app.inject({ url: '/api/media/old-mini/task/source/baseline/stable-A/original', headers: host });
+    expect(old.statusCode).toBe(200);
+    expect(old.rawPayload).toEqual(canonical.rawPayload);
+});

@@ -76,3 +76,10 @@ T2I_E2E_PORT=4182 pnpm test:e2e
 ```
 
 默认服务仅绑定本机。网络绑定需设置 `T2I_ALLOW_NETWORK=true` 和 `T2I_ALLOWED_HOSTS`。数据服务只通过声明的 collection/task/dataset/exp/sample/panel 身份返回图片，不接受任意文件路径。
+
+Collection manifests may declare an optional `aliases` array of retired IDs.
+Aliases resolve read-only page, record and media links to the canonical collection
+without adding menu entries. The browser preserves columns, filters, pagination
+and the active sample when normalizing a link. Imports must target the canonical
+ID; alias writes and colliding identities fail explicitly. The shared GeoBanana
+collection is `sft-e6-r30`, with `sft-e6.1-r30` retained as a read-only alias.

@@ -27,6 +27,7 @@ export type Task = {
 };
 export type Collection = {
     id: string;
+    aliases?: string[];
     title: string;
     description?: string;
     tasks: Task[];
@@ -104,7 +105,7 @@ const title = { type: 'string', minLength: 1, maxLength: 160 };
 const text = { type: ['string', 'null'] };
 export const collectionSchema = {
     $id: 't2i-explorer/collection', type: 'object', additionalProperties: false, required: ['schema_version', 'id', 'title', 'tasks'],
-    properties: { schema_version: { const: 3 }, id, title, description: { type: 'string', maxLength: 4000 }, tasks: { type: 'array', maxItems: 200, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'datasets'], properties: { id, title, datasets: { type: 'array', maxItems: 1000, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'data_origin', 'exps'], properties: { id, title, data_origin: { enum: ['native', 'derived'] }, exps: { type: 'array', minItems: 1, maxItems: 1000, items: { type: 'object', additionalProperties: false, required: ['id'], properties: { id } } } } } } } } } }
+    properties: { schema_version: { const: 3 }, id, title, aliases: { type: 'array', uniqueItems: true, maxItems: 32, items: id }, description: { type: 'string', maxLength: 4000 }, tasks: { type: 'array', maxItems: 200, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'datasets'], properties: { id, title, datasets: { type: 'array', maxItems: 1000, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'data_origin', 'exps'], properties: { id, title, data_origin: { enum: ['native', 'derived'] }, exps: { type: 'array', minItems: 1, maxItems: 1000, items: { type: 'object', additionalProperties: false, required: ['id'], properties: { id } } } } } } } } } }
 } as const;
 export const experimentSchema = { $id: 't2i-explorer/experiment', type: 'object', additionalProperties: false, required: ['schema_version', 'id', 'title', 'record_count', 'metadata'], properties: { schema_version: { const: 3 }, id, title, description: { type: 'string', maxLength: 4000 }, record_count: { type: 'integer', minimum: 0, maximum: 100000 }, metadata: { type: 'object' } } } as const;
 export const sampleSchema = { $id: 't2i-explorer/sample', type: 'object', additionalProperties: false, required: ['sample_id', 'index', 'input_text', 'pred_text', 'gt_text', 'panels', 'metadata'], properties: { sample_id: id, index: { type: 'integer', minimum: 1, maximum: 2147483647 }, input_text: text, pred_text: text, gt_text: text, panels: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'asset'], properties: { id, title, asset: { type: ['string', 'null'], pattern: '^assets/[A-Za-z0-9._/-]+$' }, unavailable_reason: { type: 'string', minLength: 1, maxLength: 2000 } }, allOf: [{ if: { properties: { asset: { type: 'null' } } }, then: { required: ['unavailable_reason'], properties: { unavailable_reason: { type: 'string' } } } }] } }, extra_texts: { type: 'array', maxItems: 100, items: { type: 'object', additionalProperties: false, required: ['title', 'text'], properties: { title, text } } }, metadata: { type: 'object' } } } as const;

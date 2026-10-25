@@ -60,3 +60,9 @@ export function serializeViewState(state: ViewState): string {
     const encoded = params.toString();
     return encoded ? `?${encoded}` : "";
 }
+
+/** Resolve read-only collection aliases without changing the user's view. */
+export function canonicalViewState(state: ViewState, collections: Array<{ id: string; aliases?: string[] }>): ViewState {
+    const collection = collections.find(item => item.id === state.datasetId || item.aliases?.includes(state.datasetId ?? ''));
+    return collection && collection.id !== state.datasetId ? { ...state, datasetId: collection.id } : state;
+}

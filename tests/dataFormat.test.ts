@@ -67,3 +67,15 @@ it('rejects extra trailing JSONL blank lines and whitespace-only zero-record fil
 it('rejects experiment destination inside source before creating locks or copying',async()=>{
  const {exp}=await bundle();await expect(publishExperiment(exp,path.join(exp,'destination'),'mini','task','source')).rejects.toThrow(/inside source/i);
 });
+it('refuses writes through a collection alias instead of recreating the retired collection', async () => {
+    const { root, exp } = await bundle();
+    const manifestPath = path.join(root, 'collection.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, aliases: ['retired'] }));
+    const destination = await mkdtemp(path.join(os.tmpdir(), 't2i-alias-'));
+    roots.push(destination);
+    await publishCollection(root, destination);
+    await expect(publishExperiment(exp, destination, 'retired', 'task', 'source')).rejects.toThrow(/read-only alias.*mini/);
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, id: 'retired' }));
+    await expect(publishCollection(root, destination)).rejects.toThrow(/read-only alias.*mini/);
+});
